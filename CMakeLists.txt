@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.16)
 project(gnodegui-root VERSION 0.0.0)
 
 option(GNODEGUI_ENABLE_TESTS "" ON)
