@@ -25,5 +25,6 @@ find_package(nlohmann_json REQUIRED)
 add_subdirectory(GNodeGUI)
 
 if(GNODEGUI_ENABLE_TESTS)
+  enable_testing()
   add_subdirectory(tests)
 endif()
