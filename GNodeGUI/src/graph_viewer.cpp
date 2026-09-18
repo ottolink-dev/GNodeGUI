@@ -41,6 +41,17 @@
 namespace gngui
 {
 
+namespace
+{
+LinkEndpoints endpoints(GraphicsLink *link)
+{
+  return {link->get_node_out()->get_id(),
+          link->get_node_out()->get_port_id(link->get_port_out_index()),
+          link->get_node_in()->get_id(),
+          link->get_node_in()->get_port_id(link->get_port_in_index())};
+}
+} // namespace
+
 GraphViewer::GraphViewer(std::string id, QWidget *parent) : QGraphicsView(parent), id(id)
 {
   Logger::log()->trace("GraphViewer::GraphViewer");
@@ -335,7 +346,9 @@ void GraphViewer::contextMenuEvent(QContextMenuEvent *event)
   QGraphicsView::contextMenuEvent(event);
 }
 
-void GraphViewer::delete_graphics_link(GraphicsLink *p_link, bool link_will_be_replaced)
+void GraphViewer::delete_graphics_link(GraphicsLink *p_link,
+                                       bool          link_will_be_replaced,
+                                       bool          notify)
 {
   if (!is_valid(p_link))
   {
@@ -370,7 +383,7 @@ void GraphViewer::delete_graphics_link(GraphicsLink *p_link, bool link_will_be_r
   clean_delete_graphics_item(p_link);
 
   // Emit signal
-  if (node_out && node_in)
+  if (notify && node_out && node_in)
     Q_EMIT connection_deleted(node_out_id,
                               node_out_port_id,
                               node_in_id,
@@ -378,7 +391,7 @@ void GraphViewer::delete_graphics_link(GraphicsLink *p_link, bool link_will_be_r
                               link_will_be_replaced);
 }
 
-void GraphViewer::delete_graphics_node(GraphicsNode *p_node)
+void GraphViewer::delete_graphics_node(GraphicsNode *p_node, bool notify)
 {
   if (!is_valid(p_node))
   {
@@ -395,7 +408,7 @@ void GraphViewer::delete_graphics_node(GraphicsNode *p_node)
     if (GraphicsLink *p_link = dynamic_cast<GraphicsLink *>(item))
     {
       if (p_link->get_node_out() == p_node || p_link->get_node_in() == p_node)
-        this->delete_graphics_link(p_link, false);
+        this->delete_graphics_link(p_link, false, notify);
     }
   }
 
@@ -403,7 +416,8 @@ void GraphViewer::delete_graphics_node(GraphicsNode *p_node)
   const std::string deleted_id = p_node->get_id();
   clean_delete_graphics_item(p_node);
 
-  Q_EMIT node_deleted(deleted_id);
+  if (notify)
+    Q_EMIT node_deleted(deleted_id);
 }
 
 void GraphViewer::delete_selected_items()
@@ -416,8 +430,8 @@ void GraphViewer::delete_selected_items()
 
   auto selected_items = scene->selectedItems();
 
-  std::vector<GraphicsLink *>  links_to_delete;
-  std::vector<GraphicsNode *>  nodes_to_delete;
+  std::vector<LinkEndpoints>   links_to_delete;
+  std::vector<std::string>     nodes_to_delete;
   std::vector<QGraphicsItem *> other_items;
 
   // Separate items in a single pass
@@ -427,24 +441,23 @@ void GraphViewer::delete_selected_items()
       continue;
 
     if (auto p_link = dynamic_cast<GraphicsLink *>(item))
-      links_to_delete.push_back(p_link);
+    {
+      if (p_link->get_node_out() && p_link->get_node_in())
+        links_to_delete.push_back(endpoints(p_link));
+    }
     else if (auto p_node = dynamic_cast<GraphicsNode *>(item))
-      nodes_to_delete.push_back(p_node);
+      nodes_to_delete.push_back(p_node->get_id());
     else
       other_items.push_back(item);
   }
 
-  // Delete links first
-  for (auto p_link : links_to_delete)
-    this->delete_graphics_link(p_link);
-
-  // Then nodes
-  for (auto p_node : nodes_to_delete)
-    this->delete_graphics_node(p_node);
-
-  // Finally, any remaining items
+  // Decorations belong to the view. Delete them before handing control to an
+  // editor, which may rebuild the scene and invalidate any remaining pointers.
   for (auto item : other_items)
     clean_delete_graphics_item(item);
+
+  if (!nodes_to_delete.empty() || !links_to_delete.empty())
+    this->request_deletion(nodes_to_delete, links_to_delete);
 
   this->set_enabled(true);
 
@@ -965,9 +978,12 @@ void GraphViewer::mousePressEvent(QMouseEvent *event)
     {
       // Ctrl + Right-Click on a link or a node to remove it
       if (GraphicsLink *p_link = dynamic_cast<GraphicsLink *>(item))
-        this->delete_graphics_link(p_link);
+      {
+        if (p_link->get_node_out() && p_link->get_node_in())
+          this->request_deletion({}, {endpoints(p_link)});
+      }
       else if (GraphicsNode *p_node = dynamic_cast<GraphicsNode *>(item))
-        this->delete_graphics_node(p_node);
+        this->request_deletion({p_node->get_id()}, {});
       else if (GraphicsComment *p_comment = dynamic_cast<GraphicsComment *>(item))
         clean_delete_graphics_item(p_comment);
 
@@ -1045,99 +1061,78 @@ void GraphViewer::on_connection_finished(GraphicsNode *from_node,
                                          GraphicsNode *to_node,
                                          int           port_to_index)
 {
-  if (this->temp_link)
-  {
-    PortType from_type = from_node->get_port_type(port_from_index);
-    PortType to_type = to_node->get_port_type(port_to_index);
+  if (!this->temp_link)
+    return;
 
-    if (from_node != to_node && from_type != to_type)
-    {
-      // remove any existing connection linked to the node 'to' input
-      if (!to_node->is_port_available(port_to_index))
-      {
-        Logger::log()->trace("GraphViewer::on_connection_finished: replace connection");
-
-        // loop over all graphics
-        GraphicsLink *p_link_to_delete = nullptr;
-
-        for (QGraphicsItem *item : this->scene()->items())
-          if (GraphicsLink *p_link = dynamic_cast<GraphicsLink *>(item))
-            if (p_link != this->temp_link)
-            {
-              std::string link_node_id = p_link->get_node_in()->get_id();
-              int         link_port_index = p_link->get_port_in_index();
-
-              if (link_node_id == to_node->get_id() && link_port_index == port_to_index)
-              {
-                p_link_to_delete = p_link;
-                break;
-              }
-            }
-
-        // delete the link but prevent the graph update since it's
-        // going to be updated after the new link will trigger an
-        // update in the next step
-        bool link_will_be_replaced = true;
-        this->delete_graphics_link(p_link_to_delete, link_will_be_replaced);
-      }
-
-      // create new link
-      if (from_node->is_port_available(port_from_index) &&
-          to_node->is_port_available(port_to_index))
-      {
-        Logger::log()->trace("GraphViewer::on_connection_finished: new connection");
-
-        // Finalize the connection
-        QPointF port_from_pos = from_node->scenePos() + from_node->get_geometry()
-                                                            .port_rects[port_from_index]
-                                                            .center();
-        QPointF port_to_pos = to_node->scenePos() +
-                              to_node->get_geometry().port_rects[port_to_index].center();
-
-        this->temp_link->set_endpoints(port_from_pos, port_to_pos);
-        this->temp_link->set_pen_style(Qt::SolidLine);
-
-        // from output to input
-        {
-          this->temp_link->set_endnodes(from_node,
-                                        port_from_index,
-                                        to_node,
-                                        port_to_index);
-
-          GraphicsNode *node_out = this->temp_link->get_node_out();
-          GraphicsNode *node_in = this->temp_link->get_node_in();
-
-          int port_out = this->temp_link->get_port_out_index();
-          int port_in = this->temp_link->get_port_in_index();
-
-          node_out->set_is_port_connected(port_out, this->temp_link);
-          node_in->set_is_port_connected(port_in, this->temp_link);
-
-          Logger::log()->trace("GraphViewer::on_connection_finished, {}:{} -> {}:{}",
-                               node_out->get_id(),
-                               node_out->get_port_id(port_out),
-                               node_in->get_id(),
-                               node_in->get_port_id(port_in));
-
-          Q_EMIT this->connection_finished(node_out->get_id(),
-                                           node_out->get_port_id(port_out),
-                                           node_in->get_id(),
-                                           node_in->get_port_id(port_in));
-        }
-
-        // Keep the link as a permanent connection
-        this->temp_link = nullptr;
-      }
-    }
-    else
-    {
-      // tried to connect but nothinh happens (same node from and to,
-      // same port types...)
-      clean_delete_graphics_item(temp_link);
-    }
-  }
-
+  // End the gesture before handing control to an editor. A rejected request must
+  // leave neither a permanent link nor a dangling temporary link in the view.
+  clean_delete_graphics_item(this->temp_link);
+  this->temp_link = nullptr;
   this->source_node = nullptr;
+
+  const PortType from_type = from_node->get_port_type(port_from_index);
+  const PortType to_type = to_node->get_port_type(port_to_index);
+  if (from_node == to_node || from_type == to_type)
+    return;
+
+  const LinkEndpoints link = from_type == PortType::OUT
+                                 ? LinkEndpoints{from_node->get_id(),
+                                                 from_node->get_port_id(port_from_index),
+                                                 to_node->get_id(),
+                                                 to_node->get_port_id(port_to_index)}
+                                 : LinkEndpoints{to_node->get_id(),
+                                                 to_node->get_port_id(port_to_index),
+                                                 from_node->get_id(),
+                                                 from_node->get_port_id(port_from_index)};
+  this->request_connection(link);
+}
+
+void GraphViewer::request_connection(const LinkEndpoints &link)
+{
+  GraphicsNode *node_out = this->get_graphics_node_by_id(link.node_out);
+  GraphicsNode *node_in = this->get_graphics_node_by_id(link.node_in);
+  if (!node_out || !node_in || node_out == node_in)
+    return;
+
+  const int port_out = node_out->get_port_index(link.port_out);
+  const int port_in = node_in->get_port_index(link.port_in);
+  if (port_out < 0 || port_in < 0 || node_out->get_port_type(port_out) != PortType::OUT ||
+      node_in->get_port_type(port_in) != PortType::IN)
+    return;
+
+  // Legacy behavior: replace the occupied INPUT, regardless of drag direction,
+  // then notify the application after the view has changed. An editor override
+  // can instead validate the complete replacement before changing either side.
+  for (auto *existing : this->get_links())
+    if (existing->get_node_in() == node_in && existing->get_port_in_index() == port_in)
+    {
+      this->delete_graphics_link(existing, true);
+      break;
+    }
+
+  this->add_link(link.node_out, link.port_out, link.node_in, link.port_in);
+  Q_EMIT this->connection_finished(link.node_out,
+                                   link.port_out,
+                                   link.node_in,
+                                   link.port_in);
+}
+
+void GraphViewer::request_deletion(const std::vector<std::string>   &node_ids,
+                                   const std::vector<LinkEndpoints> &links)
+{
+  // Resolve each identifier just before use: deleting a node also deletes its
+  // incident links, and observers may change the scene during notifications.
+  for (const auto &link : links)
+    for (auto *existing : this->get_links())
+      if (existing->get_node_out() && existing->get_node_in() &&
+          endpoints(existing) == link)
+      {
+        this->delete_graphics_link(existing);
+        break;
+      }
+
+  for (const auto &node_id : node_ids)
+    this->remove_node(node_id);
 }
 
 void GraphViewer::on_connection_started(GraphicsNode *from_node, int port_index)
@@ -1188,6 +1183,28 @@ void GraphViewer::on_update_started()
 
   if (GN_STYLE->viewer.disable_during_update)
     this->set_enabled(false);
+}
+
+bool GraphViewer::erase_link(const LinkEndpoints &link)
+{
+  for (auto *existing : this->get_links())
+    if (existing->get_node_out() && existing->get_node_in() &&
+        endpoints(existing) == link)
+    {
+      this->delete_graphics_link(existing, false, false);
+      return true;
+    }
+  return false;
+}
+
+bool GraphViewer::erase_node(const std::string &node_id)
+{
+  if (auto *node = this->get_graphics_node_by_id(node_id))
+  {
+    this->delete_graphics_node(node, false);
+    return true;
+  }
+  return false;
 }
 
 void GraphViewer::remove_link(const std::string &node_out_id,

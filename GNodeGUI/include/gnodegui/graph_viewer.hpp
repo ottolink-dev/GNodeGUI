@@ -17,6 +17,18 @@
 namespace gngui
 {
 
+// A connection request owns its identifiers; it never exposes scene item pointers.
+// Endpoints are always ordered output -> input, even for an input-to-output drag.
+struct LinkEndpoints
+{
+  std::string node_out;
+  std::string port_out;
+  std::string node_in;
+  std::string port_in;
+
+  bool operator==(const LinkEndpoints &) const = default;
+};
+
 class GraphViewer : public QGraphicsView
 {
   Q_OBJECT
@@ -49,6 +61,12 @@ public:
                    int                port_in,
                    bool               link_will_be_replaced = false);
   void remove_node(const std::string &node_id);
+
+  // Scene synchronization only. These do not emit connection_deleted/node_deleted
+  // or invoke edit requests. Removing a node also removes its incident graphics
+  // links. Selection notifications are still delivered.
+  bool erase_link(const LinkEndpoints &link);
+  bool erase_node(const std::string &node_id);
 
   // --- Editing
 
@@ -158,6 +176,16 @@ Q_SIGNALS:
   void rubber_band_selection_finished();
 
 protected:
+  // User edits arrive here BEFORE established nodes/links are changed. Override
+  // these to delegate to an application editor, which may reject the request or
+  // synchronize accepted edits using add_*/erase_*. Do not call the base method
+  // when the application owns the edit. The defaults retain the legacy editing
+  // behavior and connection_finished/connection_deleted/node_deleted signals.
+  // A selection deletion is one request, allowing the editor to batch updates.
+  virtual void request_connection(const LinkEndpoints &link);
+  virtual void request_deletion(const std::vector<std::string>   &node_ids,
+                                const std::vector<LinkEndpoints> &links);
+
   // --- Qt events
 
   void contextMenuEvent(QContextMenuEvent *event) override;
@@ -185,8 +213,10 @@ private Q_SLOTS:
   void on_connection_started(GraphicsNode *from_node, int port_index);
 
 private:
-  void delete_graphics_link(GraphicsLink *, bool link_will_be_replaced = false);
-  void delete_graphics_node(GraphicsNode *p_node);
+  void delete_graphics_link(GraphicsLink *,
+                            bool link_will_be_replaced = false,
+                            bool notify = true);
+  void delete_graphics_node(GraphicsNode *p_node, bool notify = true);
 
   // --- Members
 
