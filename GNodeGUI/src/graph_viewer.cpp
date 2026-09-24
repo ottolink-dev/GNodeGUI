@@ -798,10 +798,17 @@ void GraphViewer::json_from(nlohmann::json json, bool clear_existing_content)
       // outter headless nodes manager. THERE IS NO NODE FACTORY AVAILABLE
       Q_EMIT this->new_graphics_node_request(nid, QPointF(x, y));
 
-      this->get_graphics_node_by_id(nid)->json_from(json_node);
-
-      Logger::log()->trace("{}", json_node["caption"].get<std::string>());
-      Logger::log()->trace("{}", this->get_graphics_node_by_id(nid)->get_nports());
+      if (auto *gn = this->get_graphics_node_by_id(nid))
+      {
+        gn->json_from(json_node);
+        Logger::log()->trace("{}", json_node["caption"].get<std::string>());
+        Logger::log()->trace("{}", gn->get_nports());
+      }
+      else
+      {
+        Logger::log()->warn("GraphViewer::json_from: graphics node '{}' was not created",
+                            nid);
+      }
     }
   }
 
