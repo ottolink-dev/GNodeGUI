@@ -42,6 +42,11 @@ public:
     bool   add_group = true;
 
     bool disable_during_update = true;
+
+    // zoom range (view scale); zooming out goes past zoom_min only as far as
+    // needed to fit the whole graph in the view
+    float zoom_min = 0.15f;
+    float zoom_max = 3.f;
   } viewer;
 
   struct Node

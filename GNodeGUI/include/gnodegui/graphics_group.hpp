@@ -23,6 +23,8 @@ public:
   void           json_from(const nlohmann::json &json);
   nlohmann::json json_to() const;
 
+  // place and size the group to cover this scene rectangle
+  void fit_to(const QRectF &scene_rect);
   void set_caption(const std::string &new_caption);
   void set_color(const QColor &new_color);
 

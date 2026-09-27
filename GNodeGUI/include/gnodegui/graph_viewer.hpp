@@ -43,6 +43,7 @@ public:
 
   // --- Add
 
+  void        add_group(); // around the selected nodes, if any
   void        add_item(QGraphicsItem *item, QPointF scene_pos = QPointF(0.f, 0.f));
   void        add_link(const std::string &id_out,
                        const std::string &port_id_out,
@@ -218,6 +219,9 @@ private:
                             bool notify = true);
   void delete_graphics_node(GraphicsNode *p_node, bool notify = true);
 
+  // smallest view scale allowed, see Style::Viewer::zoom_min
+  qreal min_zoom() const;
+
   // --- Members
 
   std::string id;
@@ -231,6 +235,7 @@ private:
   GraphicsLink *temp_link = nullptr;   // Temporary link
   GraphicsNode *source_node = nullptr; // Source node for the connection
   LinkType      current_link_type = LinkType::CUBIC;
+  bool          is_selecting_all = false;
 };
 
 } // namespace gngui

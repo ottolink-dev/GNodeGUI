@@ -10,11 +10,13 @@
 #include <QPainter>
 #include <QPixmap>
 #include <QStyle>
+#include <QTimer>
 
 #include "gnodegui/graphics_group.hpp"
 #include "gnodegui/graphics_link.hpp"
 #include "gnodegui/logger.hpp"
 #include "gnodegui/style.hpp"
+#include "gnodegui/utils.hpp"
 
 namespace gngui
 {
@@ -36,6 +38,7 @@ GraphicsGroup::GraphicsGroup(QGraphicsItem *parent)
   this->setFlag(QGraphicsItem::ItemIsSelectable, true);
   this->setFlag(QGraphicsItem::ItemIsMovable, true);
   this->setAcceptHoverEvents(true);
+  this->setZValue(-3.); // behind everything else, see rearrange_z_order_by_size
   this->setRect(0.f, 0.f, GN_STYLE->group.default_width, GN_STYLE->group.default_height);
 
   // Create a caption text item at the top middle of the rectangle
@@ -63,6 +66,10 @@ void GraphicsGroup::contextMenuEvent(QGraphicsSceneContextMenuEvent *event)
   // if not, generate the context menu
   QMenu menu;
 
+  QAction *select_contents = menu.addAction("Select contents");
+  QAction *ungroup = menu.addAction("Ungroup");
+  menu.addSeparator();
+
   // get the default icon size for the QMenu
   int   icon_size = menu.style()->pixelMetric(QStyle::PM_SmallIconSize);
   QSize psize = QSize(icon_size, icon_size);
@@ -79,6 +86,32 @@ void GraphicsGroup::contextMenuEvent(QGraphicsSceneContextMenuEvent *event)
 
   // show the menu at the event's position
   QAction *selected_action = menu.exec(event->screenPos());
+
+  // both select what the group holds, so it can still be moved as one
+  if (selected_action == select_contents || selected_action == ungroup)
+  {
+    this->scene()->clearSelection();
+    this->update_selected_items();
+    for (QGraphicsItem *item : this->selected_items)
+      item->setSelected(true);
+
+    // ungroup: the contents stay in place and only the frame goes, once this
+    // event is done with it
+    if (selected_action == ungroup)
+    {
+      QGraphicsScene *scene = this->scene();
+      QTimer::singleShot(0,
+                         scene,
+                         [scene, this]()
+                         {
+                           if (scene->items().contains(this))
+                             clean_delete_graphics_item(this);
+                         });
+    }
+
+    event->accept();
+    return;
+  }
 
   // set the color based on the selected action
   auto it = std::find(actions.begin(), actions.end(), selected_action);
@@ -397,7 +430,7 @@ void GraphicsGroup::rearrange_z_order_by_size()
       groups.push_back(p_group);
   }
 
-  if (groups.size() < 2)
+  if (groups.empty())
     return;
 
   std::sort(groups.begin(),
@@ -411,12 +444,22 @@ void GraphicsGroup::rearrange_z_order_by_size()
               return area_a > area_b; // smallest last, largest first
             });
 
-  qreal z_value = 0.0;
+  // all behind the comments (-2), links (-1) and nodes (0), so a click on a
+  // node inside a group reaches the node
+  qreal z_value = -3.0 - qreal(groups.size());
   for (auto item : groups)
   {
     item->setZValue(z_value);
     z_value += 1.0; // each item is above the previous
   }
+}
+
+void GraphicsGroup::fit_to(const QRectF &scene_rect)
+{
+  this->setPos(scene_rect.topLeft());
+  this->setRect(QRectF(QPointF(0., 0.), scene_rect.size()));
+  this->update_caption_position();
+  this->rearrange_z_order_by_size();
 }
 
 void GraphicsGroup::set_caption(const std::string &new_caption)
