@@ -1,14 +1,18 @@
 /* Copyright (c) 2024 Otto Link. Distributed under the terms of the GNU General
  * Public License. The full license is in the file LICENSE, distributed with
  * this software. */
+#include <algorithm>
 #include <sstream>
+#include <utility>
 
 #include <QApplication>
 #include <QGraphicsProxyWidget>
 #include <QGraphicsRectItem>
 #include <QGraphicsScene>
 #include <QGraphicsSceneMouseEvent>
+#include <QGraphicsView>
 #include <QPainter>
+#include <QStyleOptionGraphicsItem>
 
 #include "gnodegui/graphics_link.hpp"
 #include "gnodegui/graphics_node.hpp"
@@ -290,6 +294,21 @@ void GraphicsNode::mousePressEvent(QGraphicsSceneMouseEvent *event)
   {
     int hovered_port_index = this->get_hovered_port_index();
 
+    // Ctrl+click on an output selects every link leaving it
+    if (hovered_port_index >= 0 && (event->modifiers() & Qt::ControlModifier) &&
+        this->get_port_type(hovered_port_index) == PortType::OUT)
+    {
+      this->scene()->clearSelection();
+      for (QGraphicsItem *item : this->scene()->items())
+        if (auto *p_link = dynamic_cast<GraphicsLink *>(item))
+          if (p_link->get_node_out() == this &&
+              p_link->get_port_out_index() == hovered_port_index)
+            p_link->setSelected(true);
+      this->is_port_pressed = true;
+      event->accept();
+      return;
+    }
+
     if (hovered_port_index >= 0 && this->is_port_available(hovered_port_index))
     {
       Logger::log()->trace("GraphicsNode::mousePressEvent: connection_started {}:{}",
@@ -302,7 +321,11 @@ void GraphicsNode::mousePressEvent(QGraphicsSceneMouseEvent *event)
       this->data_type_connecting = this->get_data_type(hovered_port_index);
       if (this->connection_started)
         this->connection_started(this, hovered_port_index);
+
+      // accepted without the base handler, which would also select the node
+      this->is_port_pressed = true;
       event->accept();
+      return;
     }
     else
     {
@@ -393,6 +416,10 @@ void GraphicsNode::mouseReleaseEvent(QGraphicsSceneMouseEvent *event)
     }
   }
 
+  // the base handler would select the node when the press was on a port
+  if (std::exchange(this->is_port_pressed, false))
+    return;
+
   QGraphicsRectItem::mouseReleaseEvent(event);
 }
 
@@ -410,12 +437,22 @@ void GraphicsNode::on_compute_started()
   this->update();
 }
 
-void GraphicsNode::paint(QPainter *painter,
-                         const QStyleOptionGraphicsItem * /* option */,
+QRectF GraphicsNode::boundingRect() const
+{
+  // the pinned outline is drawn up to 2 pen widths past the body, which
+  // reaches past the node rect at the bottom
+  const qreal m = 2. * GN_STYLE->node.pen_width_selected + 1.;
+  return QGraphicsRectItem::boundingRect().adjusted(-m, -m, m, m);
+}
+
+void GraphicsNode::paint(QPainter                       *painter,
+                         const QStyleOptionGraphicsItem *option,
                          QWidget * /* widget */)
 {
   if (!this->p_proxy)
     return;
+
+  const qreal lod = option->levelOfDetailFromTransform(painter->worldTransform());
 
   if (current_widget_size != this->get_widget_size())
     this->update_geometry();
@@ -521,10 +558,12 @@ void GraphicsNode::paint(QPainter *painter,
                       align_flag,
                       this->get_port_caption(k).c_str());
 
-    // Port appearance when selected or not
+    // Port appearance when selected or not. The hovered ring keeps a couple of
+    // screen pixels when zoomed out (capped to stay inside the node rect)
     if (this->is_port_hovered[k])
       painter->setPen(
-          QPen(GN_STYLE->node.color_port_hovered, GN_STYLE->node.pen_width_hovered));
+          QPen(GN_STYLE->node.color_port_hovered,
+               std::clamp(2. / lod, qreal(GN_STYLE->node.pen_width_hovered), 8.)));
     else if (this->is_node_hovered)
       painter->setPen(
           QPen(GN_STYLE->node.color_border_hovered, GN_STYLE->node.pen_width_hovered));
@@ -705,24 +744,41 @@ void GraphicsNode::update_geometry()
 
 bool GraphicsNode::update_is_port_hovered(QPointF item_pos)
 {
-  // set hover state
+  // the nearest port within reach. Zoomed out, a port is only a couple of
+  // pixels wide on screen, so the reach grows to a few pixels, but never
+  // past a quarter of the node so the body can still be dragged
+  qreal scale = 1.;
+  if (this->scene() && !this->scene()->views().isEmpty())
+    scale = this->scene()->views().first()->transform().m11();
+
+  qreal reach = std::clamp<qreal>(
+      5. / scale,
+      GN_STYLE->node.port_radius,
+      std::max<qreal>(GN_STYLE->node.port_radius,
+                      0.25 * this->geometry.body_rect.width()));
+  int hovered = -1;
+
   for (size_t k = 0; k < this->geometry.port_rects.size(); k++)
-    if (this->geometry.port_rects[k].contains(item_pos))
+  {
+    const qreal distance = QLineF(item_pos, this->geometry.port_rects[k].center())
+                               .length();
+    if (distance <= reach)
     {
-      this->is_port_hovered[k] = true;
-      return true;
+      reach = distance;
+      hovered = int(k);
+    }
+  }
+
+  // true while a port is hovered, or when one just stopped being hovered
+  bool changed = false;
+  for (size_t k = 0; k < this->is_port_hovered.size(); k++)
+    if (this->is_port_hovered[k] != (int(k) == hovered))
+    {
+      this->is_port_hovered[k] = int(k) == hovered;
+      changed = true;
     }
 
-  // if we end up here and one the flag is still true, it means we
-  // just left a hovered port
-  for (size_t k = 0; k < this->geometry.port_rects.size(); k++)
-    if (this->is_port_hovered[k])
-    {
-      this->is_port_hovered[k] = false;
-      return true;
-    }
-
-  return false;
+  return changed || hovered >= 0;
 }
 
 void GraphicsNode::update_links()

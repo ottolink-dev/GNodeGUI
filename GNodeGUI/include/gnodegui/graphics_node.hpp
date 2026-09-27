@@ -85,6 +85,7 @@ protected:
   void     hoverEnterEvent(QGraphicsSceneHoverEvent *event) override;
   void     hoverLeaveEvent(QGraphicsSceneHoverEvent *event) override;
   void     hoverMoveEvent(QGraphicsSceneHoverEvent *event) override;
+  QRectF   boundingRect() const override;
   QVariant itemChange(GraphicsItemChange change, const QVariant &value) override;
   void     mouseMoveEvent(QGraphicsSceneMouseEvent *event);
   void     mousePressEvent(QGraphicsSceneMouseEvent *event) override;
@@ -119,6 +120,7 @@ private:
   bool                        is_node_computing = false;
   bool                        is_widget_visible = true;
   bool                        has_connection_started = false;
+  bool                        is_port_pressed = false;
   int                         port_index_from;
   std::string                 data_type_connecting = "";
   QGraphicsProxyWidget       *proxy_widget = nullptr; // owned by this

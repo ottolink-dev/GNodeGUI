@@ -1,6 +1,7 @@
 /* Copyright (c) 2024 Otto Link. Distributed under the terms of the GNU General
  * Public License. The full license is in the file LICENSE, distributed with
  * this software. */
+#include <algorithm>
 #include <fstream>
 #include <iostream>
 
@@ -70,6 +71,27 @@ GraphViewer::GraphViewer(std::string id, QWidget *parent) : QGraphicsView(parent
 
   if (GN_STYLE->viewer.add_toolbar)
     this->add_toolbar(GN_STYLE->viewer.toolbar_window_pos);
+}
+
+void GraphViewer::add_group()
+{
+  // around the selected nodes, or a default-sized group at the cursor
+  std::vector<QGraphicsItem *> nodes;
+  for (QGraphicsItem *item : this->scene()->selectedItems())
+    if (dynamic_cast<GraphicsNode *>(item))
+      nodes.push_back(item);
+
+  auto *p_group = new GraphicsGroup();
+  if (nodes.empty())
+  {
+    this->add_item(p_group, this->get_mouse_scene_pos());
+    return;
+  }
+
+  // extra room at the top for the caption
+  const qreal pad = 24.;
+  this->add_item(p_group);
+  p_group->fit_to(compute_bounding_rect(nodes).adjusted(-pad, -2. * pad, pad, pad));
 }
 
 void GraphViewer::add_item(QGraphicsItem *item, QPointF scene_pos)
@@ -160,6 +182,8 @@ std::string GraphViewer::add_node(NodeProxy         *p_node_proxy,
 
   p_node->selected = [this](const std::string &node_id)
   {
+    if (this->is_selecting_all)
+      return;
     Q_EMIT this->node_selected(node_id);
     Q_EMIT this->selection_has_changed();
   };
@@ -214,10 +238,7 @@ void GraphViewer::add_toolbar(QPoint window_pos)
   if (GN_STYLE->viewer.add_group)
   {
     IconButton *group_button = add_icon_button(new GroupIcon(width, color, pen_width));
-    this->connect(group_button,
-                  &IconButton::clicked,
-                  [this]()
-                  { this->add_item(new GraphicsGroup(), this->get_mouse_scene_pos()); });
+    this->connect(group_button, &IconButton::clicked, [this]() { this->add_group(); });
   }
 
   IconButton *link_type_button = add_icon_button(
@@ -922,7 +943,7 @@ void GraphViewer::keyReleaseEvent(QKeyEvent *event)
   else if (event->modifiers() == Qt::ControlModifier && event->key() == Qt::Key_G)
   {
     if (GN_STYLE->viewer.add_group)
-      this->add_item(new GraphicsGroup(), this->get_mouse_scene_pos());
+      this->add_group();
   }
   else if (event->modifiers() == Qt::ControlModifier && event->key() == Qt::Key_L)
   {
@@ -1173,6 +1194,17 @@ void GraphViewer::on_node_settings_request(const std::string &node_id)
 
 void GraphViewer::on_node_right_clicked(const std::string &node_id, QPointF scene_pos)
 {
+  // the right press makes the node the scene's mouse grabber, and the menu
+  // opened for it takes the release: without this, the press that closes the
+  // menu (e.g. a right-click on another node) would go to this node again
+  QTimer::singleShot(0,
+                     this,
+                     [this]()
+                     {
+                       if (QGraphicsItem *grabber = this->scene()->mouseGrabberItem())
+                         grabber->ungrabMouse();
+                     });
+
   Q_EMIT this->node_right_clicked(node_id, scene_pos);
 }
 
@@ -1271,8 +1303,12 @@ void GraphViewer::save_screenshot(const std::string &fname)
 
 void GraphViewer::select_all()
 {
+  // one notification for the whole selection: a node_selected per node would
+  // make every viewer switch to (and render) each node in turn
+  this->is_selecting_all = true;
   for (QGraphicsItem *item : this->scene()->items())
     item->setSelected(true);
+  this->is_selecting_all = false;
 
   Q_EMIT this->selection_has_changed();
 }
@@ -1315,20 +1351,39 @@ void GraphViewer::unpin_nodes()
 
 void GraphViewer::wheelEvent(QWheelEvent *event)
 {
-  const float factor = 1.2f;
-  QPointF     mouse_scene_pos = this->mapToScene(event->position().toPoint());
+  event->accept();
 
+  // a view already outside the range (e.g. after fitting a tiny graph) may
+  // only move back towards it
+  const qreal current = this->transform().m11();
+  qreal       target;
   if (event->angleDelta().y() > 0)
-    this->scale(factor, factor);
+    target = std::min(current * 1.2, std::max<qreal>(GN_STYLE->viewer.zoom_max, current));
   else
-    this->scale(1.f / factor, 1.f / factor);
+    target = std::max(current / 1.2, std::min(this->min_zoom(), current));
+
+  if (target == current)
+    return;
+
+  QPointF mouse_scene_pos = this->mapToScene(event->position().toPoint());
+  this->scale(target / current, target / current);
 
   // adjust the view to maintain the zoom centered on the mouse position
   QPointF new_mouse_scene_pos = this->mapToScene(event->position().toPoint());
   QPointF delta = new_mouse_scene_pos - mouse_scene_pos;
   this->translate(delta.x(), delta.y());
+}
 
-  event->accept();
+qreal GraphViewer::min_zoom() const
+{
+  const QRectF bbox = this->get_bounding_box();
+  if (bbox.isEmpty())
+    return GN_STYLE->viewer.zoom_min;
+
+  const QSizeF view = this->viewport()->size();
+  const qreal  fit = 0.8 *
+                    std::min(view.width() / bbox.width(), view.height() / bbox.height());
+  return std::min<qreal>(GN_STYLE->viewer.zoom_min, fit);
 }
 
 void GraphViewer::zoom_to_content()
@@ -1341,6 +1396,11 @@ void GraphViewer::zoom_to_content()
   bbox.adjust(-margin_x, -margin_y, margin_x, margin_y);
 
   this->fitInView(bbox, Qt::KeepAspectRatio);
+
+  // a graph of one or two nodes would otherwise fill the view
+  const qreal scale = this->transform().m11();
+  if (scale > GN_STYLE->viewer.zoom_max)
+    this->scale(GN_STYLE->viewer.zoom_max / scale, GN_STYLE->viewer.zoom_max / scale);
 }
 
 } // namespace gngui
