@@ -503,15 +503,9 @@ void GraphicsNode::paint(QPainter                       *painter,
     header_color = GN_STYLE->node.color_category.at(main_category);
 
   if (this->is_node_computing)
-  {
-    QColor dim_color = header_color;
-    dim_color.setAlphaF(0.5f * header_color.alphaF());
-    painter->setBrush(dim_color);
-  }
+    painter->setBrush(QBrush(header_color, Qt::BDiagPattern));
   else
-  {
     painter->setBrush(header_color);
-  }
 
   painter->setPen(Qt::NoPen);
   QPainterPath path;
