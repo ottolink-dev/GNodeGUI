@@ -5,6 +5,7 @@
 #include <functional>
 #include <memory>
 
+#include <QElapsedTimer>
 #include <QEvent>
 #include <QGraphicsRectItem>
 #include <QMouseEvent>
@@ -118,6 +119,8 @@ private:
   std::vector<bool>           is_port_hovered;
   std::vector<GraphicsLink *> connected_link_ref; // owned by GraphViewer
   bool                        is_node_computing = false;
+  QElapsedTimer               compute_clock;   // started with the computation
+  qint64                      compute_ms = -1; // last computation, -1 if none
   bool                        is_widget_visible = true;
   bool                        has_connection_started = false;
   bool                        is_port_pressed = false;

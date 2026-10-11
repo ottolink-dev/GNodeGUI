@@ -63,6 +63,7 @@ public:
 
     bool reload_button = true;
     bool settings_button = true;
+    bool show_compute_time = true; // running while computed, then the last one
 
     QColor color_bg = QColor(102, 102, 102, 255);
     QColor color_bg_light = QColor(108, 108, 108, 255);

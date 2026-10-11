@@ -3,9 +3,11 @@
  * this software. */
 #pragma once
 #include <functional>
+#include <set>
 
 #include <QGraphicsItem>
 #include <QGraphicsView>
+#include <QTimer>
 #include <QJsonObject>
 
 #include "nlohmann/json.hpp"
@@ -236,6 +238,10 @@ private:
   GraphicsNode *source_node = nullptr; // Source node for the connection
   LinkType      current_link_type = LinkType::CUBIC;
   bool          is_selecting_all = false;
+
+  // ticks the compute time of the nodes being computed
+  QTimer                compute_time_ticker;
+  std::set<std::string> computing_node_ids;
 };
 
 } // namespace gngui

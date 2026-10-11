@@ -427,6 +427,7 @@ void GraphicsNode::on_compute_finished()
 {
   Logger::log()->trace("GraphicsNode::on_compute_finished, node {}", this->get_caption());
   this->is_node_computing = false;
+  this->compute_ms = this->compute_clock.isValid() ? this->compute_clock.elapsed() : -1;
   this->update();
 }
 
@@ -434,6 +435,7 @@ void GraphicsNode::on_compute_started()
 {
   Logger::log()->trace("GraphicsNode::on_compute_started, node {}", this->get_caption());
   this->is_node_computing = true;
+  this->compute_clock.start();
   this->update();
 }
 
@@ -493,6 +495,29 @@ void GraphicsNode::paint(QPainter                       *painter,
   painter->setPen(this->isSelected() ? GN_STYLE->node.color_selected
                                      : GN_STYLE->node.color_caption);
   painter->drawText(this->geometry.caption_pos, this->get_caption().c_str());
+
+  // --- Compute time, at the end of the caption line when there is room
+
+  if (GN_STYLE->node.show_compute_time &&
+      (this->is_node_computing || this->compute_ms >= 0))
+  {
+    const qint64  ms = this->is_node_computing ? this->compute_clock.elapsed()
+                                               : this->compute_ms;
+    const QString text = ms < 1000 ? QString("%1 ms").arg(ms)
+                                   : QString("%1 s").arg(ms / 1000., 0, 'f', 1);
+
+    const QFontMetrics fm(painter->font());
+    const qreal        x = this->geometry.body_rect.right() - fm.horizontalAdvance(text);
+
+    if (x > this->geometry.caption_pos.x() + this->geometry.caption_size.width() +
+                fm.horizontalAdvance("  "))
+    {
+      QColor color = GN_STYLE->node.color_caption;
+      color.setAlphaF(0.55f);
+      painter->setPen(color);
+      painter->drawText(QPointF(x, this->geometry.caption_pos.y()), text);
+    }
+  }
 
   // --- Header
 

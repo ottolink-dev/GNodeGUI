@@ -67,6 +67,27 @@ GraphViewer::GraphViewer(std::string id, QWidget *parent) : QGraphicsView(parent
   this->setScene(new QGraphicsScene());
   this->scene()->setSceneRect(-MAX_SIZE, -MAX_SIZE, (MAX_SIZE * 2), (MAX_SIZE * 2));
 
+  // the compute time of the nodes being computed runs on screen
+  this->compute_time_ticker.setInterval(100);
+  this->connect(&this->compute_time_ticker,
+                &QTimer::timeout,
+                this,
+                [this]()
+                {
+                  // a node deleted meanwhile is no longer computed
+                  std::erase_if(this->computing_node_ids,
+                                [this](const std::string &node_id)
+                                {
+                                  auto *node = this->get_graphics_node_by_id(node_id);
+                                  if (node)
+                                    node->update();
+                                  return !node;
+                                });
+
+                  if (this->computing_node_ids.empty())
+                    this->compute_time_ticker.stop();
+                });
+
   this->setBackgroundBrush(QBrush(GN_STYLE->viewer.color_bg));
 
   if (GN_STYLE->viewer.add_toolbar)
@@ -1056,12 +1077,20 @@ void GraphViewer::mouseReleaseEvent(QMouseEvent *event)
 
 void GraphViewer::on_compute_finished(const std::string &node_id)
 {
+  this->computing_node_ids.erase(node_id);
+  if (this->computing_node_ids.empty())
+    this->compute_time_ticker.stop();
+
   if (auto *node = this->get_graphics_node_by_id(node_id))
     node->on_compute_finished();
 }
 
 void GraphViewer::on_compute_started(const std::string &node_id)
 {
+  this->computing_node_ids.insert(node_id);
+  if (GN_STYLE->node.show_compute_time && !this->compute_time_ticker.isActive())
+    this->compute_time_ticker.start();
+
   if (auto *node = this->get_graphics_node_by_id(node_id))
     node->on_compute_started();
 }
