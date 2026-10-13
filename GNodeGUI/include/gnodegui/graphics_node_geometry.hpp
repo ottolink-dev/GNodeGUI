@@ -18,7 +18,9 @@ class GraphicsNodeGeometry
 {
 public:
   GraphicsNodeGeometry() = default;
-  GraphicsNodeGeometry(NodeProxy *p_node_proxy, QSizeF widget_size = QSizeF(0.f, 0.f));
+  GraphicsNodeGeometry(NodeProxy *p_node_proxy,
+                       QSizeF     widget_size = QSizeF(0.f, 0.f),
+                       bool       footer = false); // a line under the node
 
   QSizeF  caption_size;
   QPointF caption_pos;
@@ -26,6 +28,7 @@ public:
   QRectF  body_rect;
   QRectF  header_rect;
   QRectF  comment_rect;
+  QRectF  footer_rect;
   int     full_width;
   int     full_height;
 
@@ -50,6 +53,7 @@ private:
   float header_gap;
   float node_width;
   float comment_height;
+  float footer_height = 0.f;
 
   float ports_end_y;
 };

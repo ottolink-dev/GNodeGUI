@@ -69,6 +69,10 @@ public:
   void on_compute_finished();
   void on_compute_started();
 
+  // a short text on a line under the node (none when empty), in the style's
+  // footer colour unless one is given
+  void set_footer(const QString &text, const QColor &color = QColor());
+
   // --- Callbacks - "signals" equivalent
   std::function<void(GraphicsNode *from, int port_index, QPointF scene_pos)>
       connection_dropped;
@@ -121,6 +125,8 @@ private:
   bool                        is_node_computing = false;
   QElapsedTimer               compute_clock;   // started with the computation
   qint64                      compute_ms = -1; // last computation, -1 if none
+  QString                     footer;          // see set_footer()
+  QColor                      footer_color;
   bool                        is_widget_visible = true;
   bool                        has_connection_started = false;
   bool                        is_port_pressed = false;

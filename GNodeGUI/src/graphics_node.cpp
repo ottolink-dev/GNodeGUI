@@ -439,6 +439,21 @@ void GraphicsNode::on_compute_started()
   this->update();
 }
 
+void GraphicsNode::set_footer(const QString &text, const QColor &color)
+{
+  if (text == this->footer && color == this->footer_color)
+    return;
+
+  // the line comes and goes with the text
+  const bool relayout = text.isEmpty() != this->footer.isEmpty();
+
+  this->footer = text;
+  this->footer_color = color;
+  if (relayout)
+    this->update_geometry();
+  this->update();
+}
+
 QRectF GraphicsNode::boundingRect() const
 {
   // the pinned outline is drawn up to 2 pen widths past the body, which
@@ -517,6 +532,17 @@ void GraphicsNode::paint(QPainter                       *painter,
       painter->setPen(color);
       painter->drawText(QPointF(x, this->geometry.caption_pos.y()), text);
     }
+  }
+
+  // --- Footer, under the node at the end of its line
+
+  if (!this->footer.isEmpty())
+  {
+    painter->setPen(this->footer_color.isValid() ? this->footer_color
+                                                 : GN_STYLE->node.color_footer);
+    painter->drawText(this->geometry.footer_rect,
+                      Qt::AlignRight | Qt::AlignVCenter,
+                      this->footer);
   }
 
   // --- Header
@@ -757,7 +783,9 @@ void GraphicsNode::update_geometry()
   QSizeF widget_size = this->get_widget_size();
 
   // geometry
-  this->geometry = GraphicsNodeGeometry(this->p_proxy, widget_size);
+  this->geometry = GraphicsNodeGeometry(this->p_proxy,
+                                        widget_size,
+                                        !this->footer.isEmpty());
   this->setRect(0.f, 0.f, this->geometry.full_width, this->geometry.full_height);
 }
 

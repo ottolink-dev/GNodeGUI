@@ -10,7 +10,9 @@
 namespace gngui
 {
 
-GraphicsNodeGeometry::GraphicsNodeGeometry(NodeProxy *p_node_proxy, QSizeF widget_size)
+GraphicsNodeGeometry::GraphicsNodeGeometry(NodeProxy *p_node_proxy,
+                                           QSizeF     widget_size,
+                                           bool       footer)
     : p_node_proxy(p_node_proxy)
 {
   if (!p_node_proxy)
@@ -26,6 +28,7 @@ GraphicsNodeGeometry::GraphicsNodeGeometry(NodeProxy *p_node_proxy, QSizeF widge
 
   // in this order...
   this->compute_base_metrics(fm);
+  this->footer_height = footer ? this->line_height : 0.f;
   this->compute_node_width(widget_size);
   this->compute_caption(fm);
   this->compute_comment_height(fm, this->p_node_proxy->get_comment());
@@ -50,13 +53,17 @@ void GraphicsNodeGeometry::compute_body_and_header()
   this->body_rect = QRectF(this->margin,
                            body_top,
                            this->node_width,
-                           this->full_height - body_top - this->comment_height);
+                           this->full_height - body_top - this->comment_height -
+                               this->footer_height);
 
   this->header_rect = this->body_rect;
   this->header_rect.setHeight(this->header_gap);
 
   this->comment_rect = QRectF(this->body_rect.bottomLeft(),
                               QSizeF(this->node_width, this->comment_height));
+
+  this->footer_rect = QRectF(this->comment_rect.bottomLeft(),
+                             QSizeF(this->node_width, this->footer_height));
 }
 
 void GraphicsNodeGeometry::compute_caption(const QFontMetrics &fm)
@@ -94,7 +101,8 @@ void GraphicsNodeGeometry::compute_full_dimensions(const QSizeF &widget_size)
   this->full_width = std::max(min_width_caption, this->node_width) + 2.f * this->margin;
 
   this->full_height = this->line_height * (0.5f + this->p_node_proxy->get_nports()) +
-                      this->header_gap + this->comment_height + 2.f * this->margin;
+                      this->header_gap + this->comment_height + this->footer_height +
+                      2.f * this->margin;
 
   if (widget_size.height() > 0)
   {
