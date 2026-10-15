@@ -7,8 +7,8 @@
 
 #include <QGraphicsItem>
 #include <QGraphicsView>
-#include <QTimer>
 #include <QJsonObject>
+#include <QTimer>
 
 #include "nlohmann/json.hpp"
 

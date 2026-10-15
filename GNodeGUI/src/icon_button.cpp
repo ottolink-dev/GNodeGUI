@@ -12,8 +12,7 @@
 namespace gngui
 {
 
-IconButton::IconButton(AbstractIcon *icon, QWidget *parent)
-    : QWidget(parent), icon(icon)
+IconButton::IconButton(AbstractIcon *icon, QWidget *parent) : QWidget(parent), icon(icon)
 {
   const int size = (int)std::ceil(this->icon->get_width() +
                                   2.f * this->icon->pen().widthF());
