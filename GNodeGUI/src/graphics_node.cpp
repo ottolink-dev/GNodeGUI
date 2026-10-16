@@ -294,6 +294,20 @@ void GraphicsNode::mousePressEvent(QGraphicsSceneMouseEvent *event)
   {
     int hovered_port_index = this->get_hovered_port_index();
 
+    // Alt+press on a connected port picks its links up, to drop them on another
+    // port (see GraphViewer::on_rewire_started)
+    if (hovered_port_index >= 0 && (event->modifiers() & Qt::AltModifier) &&
+        this->rewire_started && this->rewire_started(this, hovered_port_index))
+    {
+      this->has_connection_started = true;
+      this->setFlag(QGraphicsItem::ItemIsMovable, false);
+      this->port_index_from = hovered_port_index;
+      this->data_type_connecting = this->get_data_type(hovered_port_index);
+      this->is_port_pressed = true;
+      event->accept();
+      return;
+    }
+
     // Ctrl+click on an output selects every link leaving it
     if (hovered_port_index >= 0 && (event->modifiers() & Qt::ControlModifier) &&
         this->get_port_type(hovered_port_index) == PortType::OUT)
