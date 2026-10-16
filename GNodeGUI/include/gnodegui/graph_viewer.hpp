@@ -188,6 +188,9 @@ protected:
   virtual void request_connection(const LinkEndpoints &link);
   virtual void request_deletion(const std::vector<std::string>   &node_ids,
                                 const std::vector<LinkEndpoints> &links);
+  // links moved from one port to another (Alt+drag of a port): one edit
+  virtual void request_rewire(const std::vector<LinkEndpoints> &removed,
+                              const std::vector<LinkEndpoints> &added);
 
   // --- Qt events
 
@@ -215,6 +218,13 @@ private Q_SLOTS:
 
   void on_connection_started(GraphicsNode *from_node, int port_index);
 
+  // Alt+drag of a connected port: its links are hidden and drawn from their
+  // other end to the mouse, then moved to the port they are dropped on (same
+  // kind, same data type), or put back
+  bool on_rewire_started(GraphicsNode *node, int port_index);
+  void update_rewire(QPointF scene_pos);
+  void end_rewire(GraphicsNode *target, int target_port_index);
+
 private:
   void delete_graphics_link(GraphicsLink *,
                             bool link_will_be_replaced = false,
@@ -238,6 +248,20 @@ private:
   GraphicsNode *source_node = nullptr; // Source node for the connection
   LinkType      current_link_type = LinkType::CUBIC;
   bool          is_selecting_all = false;
+
+  // see on_rewire_started()
+  struct Rewire
+  {
+    GraphicsLink *link; // hidden meanwhile
+    GraphicsLink *temp; // from its other end to the mouse
+  };
+  std::vector<Rewire> rewiring;
+  GraphicsNode       *rewire_node = nullptr;
+  int                 rewire_port_index = -1;
+
+  bool   is_panning = false; // middle button
+  QPoint pan_origin;
+  bool   is_rubber_band = false; // left button, from empty space
 
   // ticks the compute time of the nodes being computed
   QTimer                compute_time_ticker;

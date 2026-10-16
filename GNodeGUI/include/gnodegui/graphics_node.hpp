@@ -80,6 +80,8 @@ public:
       void(GraphicsNode *from, int port_from_index, GraphicsNode *to, int port_to_index)>
                                                                 connection_finished;
   std::function<void(GraphicsNode *from, int port_index)>       connection_started;
+  // Alt+press on a port: false when it has no link to move
+  std::function<bool(GraphicsNode *node, int port_index)> rewire_started;
   std::function<void(const std::string &id)>                    selected;
   std::function<void(const std::string &id)>                    deselected;
   std::function<void(const std::string &id, QPointF scene_pos)> right_clicked;

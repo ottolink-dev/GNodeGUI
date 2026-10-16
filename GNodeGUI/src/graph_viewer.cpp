@@ -4,12 +4,15 @@
 #include <algorithm>
 #include <fstream>
 #include <iostream>
+#include <utility>
 
 #include <QCoreApplication>
+#include <QCursor>
 #include <QKeyEvent>
 #include <QLineEdit>
 #include <QMenu>
 #include <QMimeData>
+#include <QScrollBar>
 #include <QTimer>
 #include <QToolTip>
 #include <QVBoxLayout>
@@ -192,6 +195,9 @@ std::string GraphViewer::add_node(NodeProxy         *p_node_proxy,
 
   p_node->connection_started = [this](GraphicsNode *from, int port_index)
   { this->on_connection_started(from, port_index); };
+
+  p_node->rewire_started = [this](GraphicsNode *node, int port_index)
+  { return this->on_rewire_started(node, port_index); };
 
   p_node->connection_finished =
       [this](GraphicsNode *from, int port_from_index, GraphicsNode *to, int port_to_index)
@@ -1005,6 +1011,19 @@ void GraphViewer::keyReleaseEvent(QKeyEvent *event)
 
 void GraphViewer::mouseMoveEvent(QMouseEvent *event)
 {
+  if (this->is_panning)
+  {
+    const QPoint delta = event->pos() - this->pan_origin;
+    this->pan_origin = event->pos();
+    this->horizontalScrollBar()->setValue(this->horizontalScrollBar()->value() - delta.x());
+    this->verticalScrollBar()->setValue(this->verticalScrollBar()->value() - delta.y());
+    event->accept();
+    return;
+  }
+
+  if (!this->rewiring.empty())
+    this->update_rewire(this->mapToScene(event->pos()));
+
   // temporary link follows the mouse
   if (this->temp_link)
   {
@@ -1052,16 +1071,24 @@ void GraphViewer::mousePressEvent(QMouseEvent *event)
     QToolTip::hideText();
   }
 
+  // the middle button pans the view
+  if (event->button() == Qt::MiddleButton)
+  {
+    this->is_panning = true;
+    this->pan_origin = event->pos();
+    this->viewport()->setCursor(Qt::ClosedHandCursor);
+    event->accept();
+    return;
+  }
+
+  // the left one, from empty space, draws a box selecting the nodes it touches
   if (event->button() == Qt::LeftButton)
   {
-    if (event->modifiers() & Qt::ShiftModifier)
+    this->setDragMode(QGraphicsView::RubberBandDrag);
+    if (!this->itemAt(event->pos()))
     {
-      this->setDragMode(QGraphicsView::RubberBandDrag);
+      this->is_rubber_band = true;
       Q_EMIT this->rubber_band_selection_started();
-    }
-    else
-    {
-      this->setDragMode(QGraphicsView::ScrollHandDrag);
     }
   }
 
@@ -1070,9 +1097,20 @@ void GraphViewer::mousePressEvent(QMouseEvent *event)
 
 void GraphViewer::mouseReleaseEvent(QMouseEvent *event)
 {
+  if (event->button() == Qt::MiddleButton && this->is_panning)
+  {
+    this->is_panning = false;
+    this->viewport()->unsetCursor();
+    event->accept();
+    return;
+  }
+
   this->setDragMode(QGraphicsView::NoDrag);
-  Q_EMIT this->rubber_band_selection_finished();
   QGraphicsView::mouseReleaseEvent(event);
+
+  // once the selection is settled
+  if (std::exchange(this->is_rubber_band, false))
+    Q_EMIT this->rubber_band_selection_finished();
 }
 
 void GraphViewer::on_compute_finished(const std::string &node_id)
@@ -1099,6 +1137,9 @@ void GraphViewer::on_connection_dropped(GraphicsNode *from,
                                         int           port_index,
                                         QPointF       scene_pos)
 {
+  if (!this->rewiring.empty())
+    return this->end_rewire(nullptr, -1); // put back
+
   if (this->temp_link)
   {
     // Remove the temporary line
@@ -1120,6 +1161,9 @@ void GraphViewer::on_connection_finished(GraphicsNode *from_node,
                                          GraphicsNode *to_node,
                                          int           port_to_index)
 {
+  if (!this->rewiring.empty())
+    return this->end_rewire(to_node, port_to_index);
+
   if (!this->temp_link)
     return;
 
@@ -1209,6 +1253,129 @@ void GraphViewer::on_connection_started(GraphicsNode *from_node, int port_index)
 
   Q_EMIT this->connection_started(from_node->get_id(),
                                   from_node->get_port_id(port_index));
+}
+
+bool GraphViewer::on_rewire_started(GraphicsNode *node, int port_index)
+{
+  const bool  is_out = node->get_port_type(port_index) == PortType::OUT;
+  const QColor color = get_color_from_data_type(node->get_data_type(port_index));
+
+  for (QGraphicsItem *item : this->scene()->items())
+    if (auto *p_link = dynamic_cast<GraphicsLink *>(item))
+    {
+      if (!p_link->get_node_out() || !p_link->get_node_in())
+        continue;
+
+      const bool attached = is_out ? p_link->get_node_out() == node &&
+                                         p_link->get_port_out_index() == port_index
+                                   : p_link->get_node_in() == node &&
+                                         p_link->get_port_in_index() == port_index;
+      if (!attached)
+        continue;
+
+      auto *p_temp = new GraphicsLink(color, this->current_link_type);
+      this->scene()->addItem(p_temp);
+      p_link->setVisible(false);
+      this->rewiring.push_back({p_link, p_temp});
+    }
+
+  if (this->rewiring.empty())
+    return false;
+
+  this->rewire_node = node;
+  this->rewire_port_index = port_index;
+  this->update_rewire(this->mapToScene(this->mapFromGlobal(QCursor::pos())));
+  return true;
+}
+
+void GraphViewer::update_rewire(QPointF scene_pos)
+{
+  if (!this->rewire_node)
+    return;
+
+  const bool is_out = this->rewire_node->get_port_type(this->rewire_port_index) ==
+                      PortType::OUT;
+
+  // the end that stays where it is, the other one follows the mouse
+  for (auto &[p_link, p_temp] : this->rewiring)
+  {
+    if (is_out)
+    {
+      GraphicsNode *p_in = p_link->get_node_in();
+      p_temp->set_endpoints(
+          scene_pos,
+          p_in->scenePos() +
+              p_in->get_geometry().port_rects[p_link->get_port_in_index()].center());
+    }
+    else
+    {
+      GraphicsNode *p_out = p_link->get_node_out();
+      p_temp->set_endpoints(
+          p_out->scenePos() +
+              p_out->get_geometry().port_rects[p_link->get_port_out_index()].center(),
+          scene_pos);
+    }
+    p_temp->update_path();
+  }
+}
+
+void GraphViewer::end_rewire(GraphicsNode *target, int target_port_index)
+{
+  const auto    rewiring = std::exchange(this->rewiring, {});
+  GraphicsNode *node = std::exchange(this->rewire_node, nullptr);
+  const int     port_index = std::exchange(this->rewire_port_index, -1);
+  if (!node)
+    return;
+
+  // another port of the same kind and data type, or they go back
+  const bool is_out = node->get_port_type(port_index) == PortType::OUT;
+  const bool moved = target && target_port_index >= 0 &&
+                     !(target == node && target_port_index == port_index) &&
+                     target->get_port_type(target_port_index) ==
+                         node->get_port_type(port_index) &&
+                     target->get_data_type(target_port_index) ==
+                         node->get_data_type(port_index);
+
+  std::vector<LinkEndpoints> removed, added;
+
+  for (const auto &[p_link, p_temp] : rewiring)
+  {
+    clean_delete_graphics_item(p_temp);
+    p_link->setVisible(true);
+
+    if (!moved)
+      continue;
+
+    const LinkEndpoints old_link = endpoints(p_link);
+    LinkEndpoints       new_link = old_link;
+    if (is_out)
+    {
+      new_link.node_out = target->get_id();
+      new_link.port_out = target->get_port_id(target_port_index);
+    }
+    else
+    {
+      new_link.node_in = target->get_id();
+      new_link.port_in = target->get_port_id(target_port_index);
+    }
+
+    if (new_link.node_out == new_link.node_in)
+      continue; // a node onto itself
+
+    removed.push_back(old_link);
+    added.push_back(new_link);
+  }
+
+  if (!removed.empty())
+    this->request_rewire(removed, added);
+}
+
+void GraphViewer::request_rewire(const std::vector<LinkEndpoints> &removed,
+                                 const std::vector<LinkEndpoints> &added)
+{
+  this->request_deletion({}, removed);
+  for (const auto &link : added)
+    this->request_connection(link);
 }
 
 void GraphViewer::on_node_reload_request(const std::string &node_id)
