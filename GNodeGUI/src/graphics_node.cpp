@@ -428,6 +428,13 @@ void GraphicsNode::on_compute_finished()
   Logger::log()->trace("GraphicsNode::on_compute_finished, node {}", this->get_caption());
   this->is_node_computing = false;
   this->compute_ms = this->compute_clock.isValid() ? this->compute_clock.elapsed() : -1;
+
+  if (GN_STYLE->node.show_compute_time && this->footer.isEmpty() &&
+      this->geometry.footer_rect.height() == 0.f)
+  {
+    this->update_geometry();
+  }
+
   this->update();
 }
 
@@ -436,6 +443,13 @@ void GraphicsNode::on_compute_started()
   Logger::log()->trace("GraphicsNode::on_compute_started, node {}", this->get_caption());
   this->is_node_computing = true;
   this->compute_clock.start();
+
+  if (GN_STYLE->node.show_compute_time && this->footer.isEmpty() &&
+      this->geometry.footer_rect.height() == 0.f)
+  {
+    this->update_geometry();
+  }
+
   this->update();
 }
 
@@ -510,40 +524,6 @@ void GraphicsNode::paint(QPainter                       *painter,
   painter->setPen(this->isSelected() ? GN_STYLE->node.color_selected
                                      : GN_STYLE->node.color_caption);
   painter->drawText(this->geometry.caption_pos, this->get_caption().c_str());
-
-  // --- Compute time, at the end of the caption line when there is room
-
-  if (GN_STYLE->node.show_compute_time &&
-      (this->is_node_computing || this->compute_ms >= 0))
-  {
-    const qint64  ms = this->is_node_computing ? this->compute_clock.elapsed()
-                                               : this->compute_ms;
-    const QString text = ms < 1000 ? QString("%1 ms").arg(ms)
-                                   : QString("%1 s").arg(ms / 1000., 0, 'f', 1);
-
-    const QFontMetrics fm(painter->font());
-    const qreal        x = this->geometry.body_rect.right() - fm.horizontalAdvance(text);
-
-    if (x > this->geometry.caption_pos.x() + this->geometry.caption_size.width() +
-                fm.horizontalAdvance("  "))
-    {
-      QColor color = GN_STYLE->node.color_caption;
-      color.setAlphaF(0.55f);
-      painter->setPen(color);
-      painter->drawText(QPointF(x, this->geometry.caption_pos.y()), text);
-    }
-  }
-
-  // --- Footer, under the node at the end of its line
-
-  if (!this->footer.isEmpty())
-  {
-    painter->setPen(this->footer_color.isValid() ? this->footer_color
-                                                 : GN_STYLE->node.color_footer);
-    painter->drawText(this->geometry.footer_rect,
-                      Qt::AlignRight | Qt::AlignVCenter,
-                      this->footer);
-  }
 
   // --- Header
 
@@ -645,6 +625,33 @@ void GraphicsNode::paint(QPainter                       *painter,
                       comment.c_str());
 
     this->current_comment = comment;
+  }
+
+  // --- Footer and compute time, under the node body
+
+  if (!this->footer.isEmpty())
+  {
+    painter->setPen(this->footer_color.isValid() ? this->footer_color
+                                                 : GN_STYLE->node.color_footer);
+    painter->drawText(this->geometry.footer_rect,
+                      Qt::AlignLeft | Qt::AlignVCenter,
+                      this->footer);
+  }
+
+  if (GN_STYLE->node.show_compute_time &&
+      (this->is_node_computing || this->compute_ms >= 0))
+  {
+    const qint64  ms = this->is_node_computing ? this->compute_clock.elapsed()
+                                               : this->compute_ms;
+    const QString text = ms < 1000 ? QString("%1 ms").arg(ms)
+                                   : QString("%1 s").arg(ms / 1000., 0, 'f', 1);
+
+    QColor color = GN_STYLE->node.color_caption;
+    color.setAlphaF(0.55f);
+    painter->setPen(color);
+    painter->drawText(this->geometry.footer_rect,
+                      Qt::AlignRight | Qt::AlignVCenter,
+                      text);
   }
 
   painter->restore();
@@ -782,10 +789,12 @@ void GraphicsNode::update_geometry()
   // determine widget size (if any)
   QSizeF widget_size = this->get_widget_size();
 
+  const bool has_footer = !this->footer.isEmpty() ||
+                          (GN_STYLE->node.show_compute_time &&
+                           (this->is_node_computing || this->compute_ms >= 0));
+
   // geometry
-  this->geometry = GraphicsNodeGeometry(this->p_proxy,
-                                        widget_size,
-                                        !this->footer.isEmpty());
+  this->geometry = GraphicsNodeGeometry(this->p_proxy, widget_size, has_footer);
   this->setRect(0.f, 0.f, this->geometry.full_width, this->geometry.full_height);
 }
 
