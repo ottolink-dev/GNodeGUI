@@ -6,6 +6,7 @@
 #include <utility>
 
 #include <QApplication>
+#include <QGraphicsPixmapItem>
 #include <QGraphicsProxyWidget>
 #include <QGraphicsRectItem>
 #include <QGraphicsScene>
@@ -468,6 +469,27 @@ void GraphicsNode::set_footer(const QString &text, const QColor &color)
   this->update();
 }
 
+void GraphicsNode::set_status_icons(const std::vector<StatusIcon> &icons)
+{
+  for (QGraphicsItem *item : this->status_icon_items)
+  {
+    delete item;
+  }
+  this->status_icon_items.clear();
+
+  for (const auto &entry : icons)
+  {
+    auto *pixmap_item = new QGraphicsPixmapItem(this);
+    pixmap_item->setPixmap(entry.icon.pixmap(16, 16));
+    if (!entry.tooltip.isEmpty())
+      pixmap_item->setToolTip(entry.tooltip);
+    this->status_icon_items.push_back(pixmap_item);
+  }
+
+  this->update_geometry();
+  this->update();
+}
+
 QRectF GraphicsNode::boundingRect() const
 {
   // the pinned outline is drawn up to 2 pen widths past the body, which
@@ -631,11 +653,16 @@ void GraphicsNode::paint(QPainter                       *painter,
 
   if (!this->footer.isEmpty())
   {
+    QRectF text_rect = this->geometry.footer_rect;
+    if (!this->status_icon_items.empty())
+    {
+      const float icon_width_total = this->status_icon_items.size() * 18.f;
+      text_rect.adjust(icon_width_total, 0.f, 0.f, 0.f);
+    }
+
     painter->setPen(this->footer_color.isValid() ? this->footer_color
                                                  : GN_STYLE->node.color_footer);
-    painter->drawText(this->geometry.footer_rect,
-                      Qt::AlignLeft | Qt::AlignVCenter,
-                      this->footer);
+    painter->drawText(text_rect, Qt::AlignLeft | Qt::AlignVCenter, this->footer);
   }
 
   if (GN_STYLE->node.show_compute_time &&
@@ -789,13 +816,22 @@ void GraphicsNode::update_geometry()
   // determine widget size (if any)
   QSizeF widget_size = this->get_widget_size();
 
-  const bool has_footer = !this->footer.isEmpty() ||
+  const bool has_footer = !this->footer.isEmpty() || !this->status_icon_items.empty() ||
                           (GN_STYLE->node.show_compute_time &&
                            (this->is_node_computing || this->compute_ms >= 0));
 
   // geometry
   this->geometry = GraphicsNodeGeometry(this->p_proxy, widget_size, has_footer);
   this->setRect(0.f, 0.f, this->geometry.full_width, this->geometry.full_height);
+
+  // position status icons at the bottom-left in the footer row
+  float       current_x = this->geometry.footer_rect.left();
+  const float icon_y = this->geometry.footer_rect.center().y() - 8.f;
+  for (QGraphicsItem *item : this->status_icon_items)
+  {
+    item->setPos(current_x, icon_y);
+    current_x += 18.f;
+  }
 }
 
 bool GraphicsNode::update_is_port_hovered(QPointF item_pos)

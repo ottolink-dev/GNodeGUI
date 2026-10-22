@@ -73,6 +73,14 @@ public:
   // footer colour unless one is given
   void set_footer(const QString &text, const QColor &color = QColor());
 
+  // status icons on the bottom-left under the node body
+  struct StatusIcon
+  {
+    QIcon   icon;
+    QString tooltip;
+  };
+  void set_status_icons(const std::vector<StatusIcon> &icons);
+
   // --- Callbacks - "signals" equivalent
   std::function<void(GraphicsNode *from, int port_index, QPointF scene_pos)>
       connection_dropped;
@@ -113,26 +121,27 @@ private:
 
   // --- Members
 
-  QPointer<NodeProxy>         p_proxy;
-  GraphicsNodeGeometry        geometry;
-  std::string                 current_comment;
-  QSizeF                      current_widget_size;
-  bool                        is_node_dragged = false;
-  bool                        is_node_hovered = false;
-  bool                        is_node_pinned = false;
-  std::vector<bool>           is_port_hovered;
-  std::vector<GraphicsLink *> connected_link_ref; // owned by GraphViewer
-  bool                        is_node_computing = false;
-  QElapsedTimer               compute_clock;   // started with the computation
-  qint64                      compute_ms = -1; // last computation, -1 if none
-  QString                     footer;          // see set_footer()
-  QColor                      footer_color;
-  bool                        is_widget_visible = true;
-  bool                        has_connection_started = false;
-  bool                        is_port_pressed = false;
-  int                         port_index_from;
-  std::string                 data_type_connecting = "";
-  QGraphicsProxyWidget       *proxy_widget = nullptr; // owned by this
+  QPointer<NodeProxy>          p_proxy;
+  GraphicsNodeGeometry         geometry;
+  std::string                  current_comment;
+  QSizeF                       current_widget_size;
+  bool                         is_node_dragged = false;
+  bool                         is_node_hovered = false;
+  bool                         is_node_pinned = false;
+  std::vector<bool>            is_port_hovered;
+  std::vector<GraphicsLink *>  connected_link_ref; // owned by GraphViewer
+  bool                         is_node_computing = false;
+  QElapsedTimer                compute_clock;   // started with the computation
+  qint64                       compute_ms = -1; // last computation, -1 if none
+  QString                      footer;          // see set_footer()
+  QColor                       footer_color;
+  std::vector<QGraphicsItem *> status_icon_items;
+  bool                         is_widget_visible = true;
+  bool                         has_connection_started = false;
+  bool                         is_port_pressed = false;
+  int                          port_index_from;
+  std::string                  data_type_connecting = "";
+  QGraphicsProxyWidget        *proxy_widget = nullptr; // owned by this
 };
 
 // --- helper
