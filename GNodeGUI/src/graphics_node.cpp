@@ -258,6 +258,7 @@ QVariant GraphicsNode::itemChange(GraphicsItemChange change, const QVariant &val
 void GraphicsNode::json_from(const nlohmann::json &json)
 {
   json_safe_get(json, "is_widget_visible", this->is_widget_visible);
+  json_safe_get(json, "is_node_pinned", this->is_node_pinned);
 
   float x = 0;
   float y = 0;
@@ -271,6 +272,7 @@ nlohmann::json GraphicsNode::json_to() const
   nlohmann::json json;
 
   json["is_widget_visible"] = this->is_widget_visible;
+  json["is_node_pinned"] = this->is_node_pinned;
   json["scene_position.x"] = this->scenePos().x();
   json["scene_position.y"] = this->scenePos().y();
 
