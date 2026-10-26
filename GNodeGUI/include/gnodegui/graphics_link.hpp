@@ -53,6 +53,8 @@ public:
   void     set_endpoints(const QPointF &start_point, const QPointF &end_point);
   void     set_link_type(const LinkType &new_link_type);
   void     set_pen_style(const Qt::PenStyle &new_pen_style);
+  void     set_port_in_index(int new_index);
+  void     set_port_out_index(int new_index);
   LinkType toggle_link_type();
   void     update_path();
 

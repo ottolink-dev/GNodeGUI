@@ -57,6 +57,9 @@ public:
 
   // --- Debugging
   void log_debug();
+
+Q_SIGNALS:
+  void ports_changed();
 };
 
 template <typename ModelNode> class TypedNodeProxy : public NodeProxy

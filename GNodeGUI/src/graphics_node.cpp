@@ -58,6 +58,12 @@ GraphicsNode::GraphicsNode(QPointer<NodeProxy> p_proxy, QGraphicsItem *parent)
 
   // geometry
   this->update_geometry();
+
+  // connect proxy signals
+  this->proxy_ports_changed_connection = QObject::connect(this->p_proxy.data(),
+                                                          &NodeProxy::ports_changed,
+                                                          [this]()
+                                                          { this->on_ports_changed(); });
 }
 
 GraphicsNode::~GraphicsNode()
@@ -456,6 +462,99 @@ void GraphicsNode::on_compute_started()
   this->update();
 }
 
+void GraphicsNode::on_ports_changed()
+{
+  Logger::log()->trace("GraphicsNode::on_ports_changed, node {}", this->get_caption());
+
+  if (!this->p_proxy)
+    return;
+
+  // collect existing links attached to this node using previously known port ids
+  struct AttachedLinkInfo
+  {
+    GraphicsLink *link = nullptr;
+    bool          is_out = false;
+    std::string   port_id;
+  };
+
+  std::vector<AttachedLinkInfo> attached_links;
+
+  if (this->scene())
+  {
+    for (QGraphicsItem *item : this->scene()->items())
+    {
+      if (GraphicsLink *p_link = dynamic_cast<GraphicsLink *>(item))
+      {
+        if (p_link->get_node_out() == this)
+        {
+          int port_idx = p_link->get_port_out_index();
+          if (port_idx >= 0 && port_idx < (int)this->known_port_ids.size())
+          {
+            attached_links.push_back({p_link, true, this->known_port_ids[port_idx]});
+          }
+        }
+
+        if (p_link->get_node_in() == this)
+        {
+          int port_idx = p_link->get_port_in_index();
+          if (port_idx >= 0 && port_idx < (int)this->known_port_ids.size())
+          {
+            attached_links.push_back({p_link, false, this->known_port_ids[port_idx]});
+          }
+        }
+      }
+    }
+  }
+
+  // update geometry and clear connected_link_ref to new size
+  this->update_geometry();
+
+  // reconcile each link with the new ports
+  std::vector<GraphicsLink *> links_to_delete;
+
+  for (const auto &info : attached_links)
+  {
+    int new_port_index = this->get_port_index(info.port_id);
+
+    // check if port still exists and has the expected direction
+    bool is_valid_port = (new_port_index >= 0);
+    if (is_valid_port)
+    {
+      PortType expected_type = info.is_out ? PortType::OUT : PortType::IN;
+      if (this->get_port_type(new_port_index) != expected_type)
+        is_valid_port = false;
+    }
+
+    if (is_valid_port)
+    {
+      if (info.is_out)
+        info.link->set_port_out_index(new_port_index);
+      else
+        info.link->set_port_in_index(new_port_index);
+
+      this->set_is_port_connected(new_port_index, info.link);
+    }
+    else
+    {
+      if (std::find(links_to_delete.begin(), links_to_delete.end(), info.link) ==
+          links_to_delete.end())
+      {
+        links_to_delete.push_back(info.link);
+      }
+    }
+  }
+
+  // delete links connected to ports that no longer exist
+  for (GraphicsLink *link : links_to_delete)
+  {
+    clean_delete_graphics_item(link);
+  }
+
+  // refresh curves and visual state
+  this->update_links();
+  this->update();
+}
+
 void GraphicsNode::set_footer(const QString &text, const QColor &color)
 {
   if (text == this->footer && color == this->footer_color)
@@ -756,7 +855,20 @@ bool GraphicsNode::sceneEventFilter(QGraphicsItem *watched, QEvent *event)
 
 void GraphicsNode::set_p_proxy(QPointer<NodeProxy> new_p_proxy)
 {
+  if (this->proxy_ports_changed_connection)
+    QObject::disconnect(this->proxy_ports_changed_connection);
+
   this->p_proxy = new_p_proxy;
+
+  if (this->p_proxy)
+  {
+    this->proxy_ports_changed_connection = QObject::connect(
+        this->p_proxy.data(),
+        &NodeProxy::ports_changed,
+        [this]() { this->on_ports_changed(); });
+  }
+
+  this->on_ports_changed();
 }
 
 void GraphicsNode::set_widget(QWidget *new_widget, QSize new_widget_size)
@@ -829,6 +941,12 @@ void GraphicsNode::update_geometry()
   // keep port state arrays in sync with dynamic ports (e.g. SubGraph)
   this->is_port_hovered.resize(this->get_nports(), false);
   this->connected_link_ref.resize(this->get_nports(), nullptr);
+
+  // keep known port IDs in sync
+  this->known_port_ids.clear();
+  this->known_port_ids.reserve(this->get_nports());
+  for (int k = 0; k < this->get_nports(); ++k)
+    this->known_port_ids.push_back(this->get_port_id(k));
 
   // position status icons at the bottom-left in the footer row
   float       current_x = this->geometry.footer_rect.left();

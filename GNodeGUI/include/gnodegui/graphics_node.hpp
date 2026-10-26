@@ -68,6 +68,7 @@ public:
   // --- "slots" equivalent
   void on_compute_finished();
   void on_compute_started();
+  void on_ports_changed();
 
   // a short text on a line under the node (none when empty), in the style's
   // footer colour unless one is given
@@ -122,6 +123,7 @@ private:
   // --- Members
 
   QPointer<NodeProxy>          p_proxy;
+  QMetaObject::Connection      proxy_ports_changed_connection;
   GraphicsNodeGeometry         geometry;
   std::string                  current_comment;
   QSizeF                       current_widget_size;
@@ -130,6 +132,7 @@ private:
   bool                         is_node_pinned = false;
   std::vector<bool>            is_port_hovered;
   std::vector<GraphicsLink *>  connected_link_ref; // owned by GraphViewer
+  std::vector<std::string>     known_port_ids;
   bool                         is_node_computing = false;
   QElapsedTimer                compute_clock;   // started with the computation
   qint64                       compute_ms = -1; // last computation, -1 if none

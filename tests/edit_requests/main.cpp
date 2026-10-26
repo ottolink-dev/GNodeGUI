@@ -31,6 +31,38 @@ private:
   std::string id;
 };
 
+struct PortDef
+{
+  std::string     caption;
+  gngui::PortType type;
+};
+
+class DynamicTestNode : public gngui::NodeProxy
+{
+public:
+  std::string get_id() const override { return id; }
+  void        set_id(const std::string &value) override { id = value; }
+  std::string get_caption() const override { return "DynamicTest"; }
+  std::string get_category() const override { return "Test"; }
+  std::string get_tool_tip_text() const override { return {}; }
+  int         get_nports() const override { return static_cast<int>(ports.size()); }
+  std::string get_port_caption(int port) const override { return ports[port].caption; }
+  gngui::PortType get_port_type(int port) const override { return ports[port].type; }
+  std::string     get_data_type(int) const override { return "float"; }
+  void           *get_data_ref(int) const override { return nullptr; }
+
+  void set_ports(const std::vector<PortDef> &new_ports)
+  {
+    ports = new_ports;
+    Q_EMIT ports_changed();
+  }
+
+  std::vector<PortDef> ports;
+
+private:
+  std::string id;
+};
+
 class TestViewer : public gngui::GraphViewer
 {
 public:
@@ -345,6 +377,60 @@ private Q_SLOTS:
     QVERIFY(!viewer.erase_link({"a", "out", "b", "in"}));
     QVERIFY(viewer.erase_node("a"));
     QVERIFY(!viewer.erase_node("a"));
+  }
+
+  void dynamic_ports_reconciliation()
+  {
+    gngui::GraphViewer viewer;
+    auto              *proxy_a = new DynamicTestNode;
+    proxy_a->setParent(&viewer);
+    proxy_a->ports = {{"out0", gngui::PortType::OUT}, {"out1", gngui::PortType::OUT}};
+    viewer.add_node(proxy_a, QPointF(0, 0), "dyn_a");
+
+    auto *proxy_b = new DynamicTestNode;
+    proxy_b->setParent(&viewer);
+    proxy_b->ports = {{"in0", gngui::PortType::IN}, {"in1", gngui::PortType::IN}};
+    viewer.add_node(proxy_b, QPointF(300, 0), "dyn_b");
+
+    viewer.add_link("dyn_a", "out0", "dyn_b", "in0");
+    viewer.add_link("dyn_a", "out1", "dyn_b", "in1");
+    QCOMPARE(viewer.get_links().size(), size_t(2));
+
+    auto *node_a = viewer.get_graphics_node_by_id("dyn_a");
+    auto *node_b = viewer.get_graphics_node_by_id("dyn_b");
+
+    // Prepend a new output to proxy_a -> out0 and out1 indices shift by +1
+    proxy_a->set_ports({{"new_out", gngui::PortType::OUT},
+                        {"out0", gngui::PortType::OUT},
+                        {"out1", gngui::PortType::OUT}});
+
+    QCOMPARE(node_a->get_nports(), 3);
+    QCOMPARE(node_a->get_port_index("out0"), 1);
+    QCOMPARE(node_a->get_port_index("out1"), 2);
+
+    // Verify existing links survived and their port_out_index shifted
+    QCOMPARE(viewer.get_links().size(), size_t(2));
+    for (auto *link : viewer.get_links())
+    {
+      if (link->get_port_in_index() == 0)
+      {
+        QCOMPARE(link->get_port_out_index(), 1);
+      }
+      else if (link->get_port_in_index() == 1)
+      {
+        QCOMPARE(link->get_port_out_index(), 2);
+      }
+    }
+
+    // Now remove "in0" on proxy_b -> connection to in0 must be deleted cleanly
+    proxy_b->set_ports({{"in1", gngui::PortType::IN}});
+
+    QCOMPARE(node_b->get_nports(), 1);
+    QCOMPARE(viewer.get_links().size(), size_t(1));
+
+    auto *surviving_link = viewer.get_links().front();
+    QCOMPARE(surviving_link->get_port_out_index(), 2);
+    QCOMPARE(surviving_link->get_port_in_index(), 0);
   }
 };
 

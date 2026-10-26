@@ -234,6 +234,10 @@ void GraphicsLink::set_pen_style(const Qt::PenStyle &new_pen_style)
   this->pen_style = new_pen_style;
 }
 
+void GraphicsLink::set_port_in_index(int new_index) { this->port_in_index = new_index; }
+
+void GraphicsLink::set_port_out_index(int new_index) { this->port_out_index = new_index; }
+
 QPainterPath GraphicsLink::shape() const
 {
   QPainterPathStroker stroker;
