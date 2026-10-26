@@ -49,6 +49,7 @@ public:
   std::string                 get_port_id(int port_index) const;
   int                         get_port_index(const std::string &id) const;
   PortType                    get_port_type(int port_index) const;
+  NodeProxy                  *get_proxy_ref();
   const NodeProxy            *get_proxy_ref() const;
   bool                        is_port_available(int port_index);
 

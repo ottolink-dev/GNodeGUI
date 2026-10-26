@@ -185,6 +185,8 @@ PortType GraphicsNode::get_port_type(int port_index) const
   return this->p_proxy->get_port_type(port_index);
 }
 
+NodeProxy *GraphicsNode::get_proxy_ref() { return this->p_proxy; }
+
 const NodeProxy *GraphicsNode::get_proxy_ref() const { return this->p_proxy; }
 
 QSizeF GraphicsNode::get_widget_size() const
