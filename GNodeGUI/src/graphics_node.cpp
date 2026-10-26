@@ -826,6 +826,10 @@ void GraphicsNode::update_geometry()
   this->geometry = GraphicsNodeGeometry(this->p_proxy, widget_size, has_footer);
   this->setRect(0.f, 0.f, this->geometry.full_width, this->geometry.full_height);
 
+  // keep port state arrays in sync with dynamic ports (e.g. SubGraph)
+  this->is_port_hovered.resize(this->get_nports(), false);
+  this->connected_link_ref.resize(this->get_nports(), nullptr);
+
   // position status icons at the bottom-left in the footer row
   float       current_x = this->geometry.footer_rect.left();
   const float icon_y = this->geometry.footer_rect.center().y() - 8.f;
