@@ -958,6 +958,12 @@ void GraphicsNode::update_geometry()
     item->setPos(current_x, icon_y);
     current_x += 18.f;
   }
+
+  // update embedded widget position
+  if (this->proxy_widget)
+  {
+    this->proxy_widget->setPos(this->geometry.widget_pos);
+  }
 }
 
 bool GraphicsNode::update_is_port_hovered(QPointF item_pos)
