@@ -61,6 +61,7 @@ public:
 
   void set_widget(QWidget *new_widget, QSize widget_size = QSize());
   void set_widget_visibility(bool is_visible);
+  QWidget *get_widget() const;
 
   // --- UI
 

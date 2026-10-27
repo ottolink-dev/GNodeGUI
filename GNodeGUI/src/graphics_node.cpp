@@ -924,6 +924,11 @@ void GraphicsNode::set_widget_visibility(bool is_visible)
   this->update();
 }
 
+QWidget *GraphicsNode::get_widget() const
+{
+  return this->proxy_widget ? this->proxy_widget->widget() : nullptr;
+}
+
 void GraphicsNode::update_geometry()
 {
   if (!this->p_proxy)
