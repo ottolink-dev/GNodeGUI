@@ -40,10 +40,12 @@ public:
 
   // --- Getters
 
-  GraphicsNode *get_node_out() { return this->node_out; }
-  GraphicsNode *get_node_in() { return this->node_in; }
-  int           get_port_out_index() const { return this->port_out_index; }
-  int           get_port_in_index() const { return this->port_in_index; }
+  GraphicsNode       *get_node_out() { return this->node_out; }
+  const GraphicsNode *get_node_out() const { return this->node_out; }
+  GraphicsNode       *get_node_in() { return this->node_in; }
+  const GraphicsNode *get_node_in() const { return this->node_in; }
+  int                 get_port_out_index() const { return this->port_out_index; }
+  int                 get_port_in_index() const { return this->port_in_index; }
 
   // --- Node / Link Management
   void     set_endnodes(GraphicsNode *from,
@@ -87,8 +89,8 @@ private:
   // node endpoints
   GraphicsNode *node_out = nullptr;
   GraphicsNode *node_in = nullptr;
-  int           port_out_index;
-  int           port_in_index;
+  int           port_out_index = -1;
+  int           port_in_index = -1;
 };
 
 } // namespace gngui
