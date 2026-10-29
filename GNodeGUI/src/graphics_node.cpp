@@ -234,8 +234,16 @@ void GraphicsNode::hoverMoveEvent(QGraphicsSceneHoverEvent *event)
 
 bool GraphicsNode::is_port_available(int port_index)
 {
-  return this->get_port_type(port_index) == PortType::OUT ||
-         !this->connected_link_ref[port_index];
+  if (port_index < 0 || port_index >= this->get_nports())
+    return false;
+
+  if (this->get_port_type(port_index) == PortType::OUT)
+    return true;
+
+  if (port_index < static_cast<int>(this->connected_link_ref.size()))
+    return !this->connected_link_ref[port_index];
+
+  return true;
 }
 
 QVariant GraphicsNode::itemChange(GraphicsItemChange change, const QVariant &value)
@@ -796,7 +804,10 @@ void GraphicsNode::set_is_node_pinned(bool new_state)
 
 void GraphicsNode::set_is_port_connected(int port_index, GraphicsLink *p_link)
 {
-  this->connected_link_ref[port_index] = p_link;
+  if (port_index >= 0 && port_index < static_cast<int>(this->connected_link_ref.size()))
+  {
+    this->connected_link_ref[port_index] = p_link;
+  }
 }
 
 void GraphicsNode::reset_is_port_hovered()
