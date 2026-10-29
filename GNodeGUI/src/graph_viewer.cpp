@@ -552,46 +552,46 @@ void GraphViewer::dropEvent(QDropEvent *event)
 
 bool GraphViewer::execute_new_node_context_menu()
 {
-  QMenu *menu = new QMenu(this);
+  std::unique_ptr<QMenu> menu = std::make_unique<QMenu>(this);
 
   // backup mouse position
   QPointF mouse_scene_pos = this->get_mouse_scene_pos();
 
   // add filterbox to the context menu
-  QLineEdit *text_box = new QLineEdit(menu);
+  QLineEdit *text_box = new QLineEdit(menu.get());
   text_box->setPlaceholderText(QStringLiteral("Filter or [SPACE]"));
   text_box->setClearButtonEnabled(true);
-  // hesiod::resize_font(text_box, -2);
 
-  QWidgetAction *text_box_action = new QWidgetAction(menu);
+  QWidgetAction *text_box_action = new QWidgetAction(menu.get());
   text_box_action->setDefaultWidget(text_box);
 
   menu->addAction(text_box_action);
 
   // sort node types by category (not by types for the treeview)
   std::vector<std::pair<std::string, std::string>> pairs;
-  for (auto itr = this->node_inventory.begin(); itr != this->node_inventory.end(); ++itr)
-    pairs.push_back(*itr);
+  pairs.reserve(this->node_inventory.size());
+  for (const auto &entry : this->node_inventory)
+    pairs.push_back(entry);
 
-  sort(pairs.begin(),
-       pairs.end(),
-       [=](std::pair<std::string, std::string> &a, std::pair<std::string, std::string> &b)
-       {
-         if (a.second == b.second)
-           return a.first < b.first;
-         else
-           return a.second < b.second;
-       });
+  std::sort(pairs.begin(),
+            pairs.end(),
+            [](const std::pair<std::string, std::string> &a,
+               const std::pair<std::string, std::string> &b)
+            {
+              if (a.second == b.second)
+                return a.first < b.first;
+              return a.second < b.second;
+            });
 
   // to keep track of created submenus
   std::map<std::string, QMenu *> category_map;
 
-  for (auto &p : pairs)
+  for (const auto &p : pairs)
   {
     const std::string              &action_name = p.first;
     const std::vector<std::string> &action_categories = split_string(p.second, '/');
 
-    QMenu *parent_menu = menu;
+    QMenu *parent_menu = menu.get();
 
     // traverse the category hierarchy
     for (const std::string &category : action_categories)
@@ -611,33 +611,33 @@ bool GraphViewer::execute_new_node_context_menu()
   // setup filtering
   bool submenu_active = true;
   bool filtering_active = false;
+  QMenu *raw_menu = menu.get();
 
   this->connect(
       text_box,
       &QLineEdit::textEdited,
-      [this, menu, category_map, &submenu_active, &filtering_active](const QString &text)
+      [this, raw_menu, category_map, &submenu_active, &filtering_active](const QString &text)
       {
-        // TODO not sure about this one, feels overly brute forcing
-
         // rebuild the menu from scratch
         if (submenu_active)
         {
           for (auto &[_, submenu] : category_map)
-            menu->removeAction(submenu->menuAction());
+            raw_menu->removeAction(submenu->menuAction());
 
           submenu_active = false;
         }
+
         // add everything
         if (!filtering_active)
         {
           for (const auto &[key, _] : this->node_inventory)
-            menu->addAction(QString::fromStdString(key));
+            raw_menu->addAction(QString::fromStdString(key));
 
           filtering_active = true;
         }
 
         // determine who's visible
-        std::map<std::string, bool> is_visible = {};
+        std::map<std::string, bool> is_visible;
 
         for (const auto &[key, _] : this->node_inventory)
         {
@@ -651,11 +651,15 @@ bool GraphViewer::execute_new_node_context_menu()
         }
 
         // apply visibility
-        for (auto action : menu->actions())
+        for (auto action : raw_menu->actions())
         {
           std::string key = action->text().toStdString();
-          if (key != "") // skip text box...
-            action->setVisible(is_visible.at(key));
+          if (!key.empty()) // skip text box...
+          {
+            auto it = is_visible.find(key);
+            if (it != is_visible.end())
+              action->setVisible(it->second);
+          }
         }
       });
 
@@ -669,10 +673,8 @@ bool GraphViewer::execute_new_node_context_menu()
     Q_EMIT this->new_node_request(selected_action->text().toStdString(), mouse_scene_pos);
     return true;
   }
-  else
-  {
-    return false;
-  }
+
+  return false;
 }
 
 void GraphViewer::export_to_graphviz(const std::string &fname)
