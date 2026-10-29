@@ -191,15 +191,16 @@ const NodeProxy *GraphicsNode::get_proxy_ref() const { return this->p_proxy; }
 
 QSizeF GraphicsNode::get_widget_size() const
 {
-  QSizeF size = QSizeF();
-
-  if (this->proxy_widget)
+  if (this->proxy_widget && this->is_widget_visible)
   {
     if (QWidget *widget = this->proxy_widget->widget())
-      size = widget->size();
+    {
+      if (widget->isVisible())
+        return widget->size();
+    }
   }
 
-  return size;
+  return QSizeF(0.f, 0.f);
 }
 
 void GraphicsNode::hoverEnterEvent(QGraphicsSceneHoverEvent *event)
@@ -910,15 +911,14 @@ void GraphicsNode::set_widget(QWidget *new_widget, QSize new_widget_size)
 
 void GraphicsNode::set_widget_visibility(bool is_visible)
 {
-  if (!this->proxy_widget)
-    return;
+  this->is_widget_visible = is_visible;
 
-  QWidget *widget = this->proxy_widget->widget();
-
-  if (!widget)
-    return;
-
-  widget->setVisible(is_visible);
+  if (this->proxy_widget)
+  {
+    this->proxy_widget->setVisible(is_visible);
+    if (QWidget *widget = this->proxy_widget->widget())
+      widget->setVisible(is_visible);
+  }
 
   this->update_geometry();
   this->update();
@@ -936,6 +936,7 @@ void GraphicsNode::update_geometry()
 
   // determine widget size (if any)
   QSizeF widget_size = this->get_widget_size();
+  this->current_widget_size = widget_size;
 
   const bool has_footer = !this->footer.isEmpty() || !this->status_icon_items.empty() ||
                           (GN_STYLE->node.show_compute_time &&
