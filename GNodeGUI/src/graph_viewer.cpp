@@ -1436,4 +1436,18 @@ void GraphViewer::zoom_to_content()
     this->scale(GN_STYLE->viewer.zoom_max / scale, GN_STYLE->viewer.zoom_max / scale);
 }
 
+void GraphViewer::update_style()
+{
+  this->setBackgroundBrush(QBrush(GN_STYLE->viewer.color_bg));
+
+  for (GraphicsLink *link : this->get_links())
+    link->update_color();
+
+  if (this->scene())
+    this->scene()->update();
+
+  if (this->viewport())
+    this->viewport()->update();
+}
+
 } // namespace gngui

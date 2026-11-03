@@ -59,6 +59,7 @@ public:
   void     set_port_out_index(int new_index);
   LinkType toggle_link_type();
   void     update_path();
+  void     update_color();
 
 protected:
   // --- QGraphicsItem overrides

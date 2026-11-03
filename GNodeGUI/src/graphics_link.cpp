@@ -283,4 +283,19 @@ void GraphicsLink::update_path()
   this->update();
 }
 
+void GraphicsLink::update_color()
+{
+  if (is_valid(this->node_out) && port_out_index >= 0)
+  {
+    std::string data_type = this->node_out->get_data_type(port_out_index);
+    this->color = get_color_from_data_type(data_type);
+  }
+  else
+  {
+    this->color = GN_STYLE->link.color_default;
+  }
+
+  this->update();
+}
+
 } // namespace gngui

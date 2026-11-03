@@ -86,6 +86,7 @@ public:
   bool execute_new_node_context_menu();
   void toggle_link_type();
   void zoom_to_content();
+  void update_style();
 
   // --- Getters
 

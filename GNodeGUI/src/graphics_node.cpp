@@ -712,7 +712,7 @@ void GraphicsNode::paint(QPainter                       *painter,
                                                               : Qt::AlignRight;
 
     // Draw port labels
-    painter->setPen(Qt::white); // Assuming labels are always white
+    painter->setPen(GN_STYLE->node.color_port_label);
     painter->drawText(this->geometry.port_label_rects[k],
                       align_flag,
                       this->get_port_caption(k).c_str());
