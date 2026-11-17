@@ -500,6 +500,18 @@ void GraphicsNode::mouseReleaseEvent(QGraphicsSceneMouseEvent *event)
   QGraphicsRectItem::mouseReleaseEvent(event);
 }
 
+void GraphicsNode::mouseDoubleClickEvent(QGraphicsSceneMouseEvent *event)
+{
+  if (event->button() == Qt::LeftButton && this->double_clicked)
+  {
+    this->double_clicked(this->get_id());
+    event->accept();
+    return;
+  }
+
+  QGraphicsRectItem::mouseDoubleClickEvent(event);
+}
+
 void GraphicsNode::on_compute_finished()
 {
   Logger::log()->trace("GraphicsNode::on_compute_finished, node {}", this->get_caption());

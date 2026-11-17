@@ -95,6 +95,7 @@ public:
   std::function<void(const std::string &id)>                    selected;
   std::function<void(const std::string &id)>                    deselected;
   std::function<void(const std::string &id, QPointF scene_pos)> right_clicked;
+  std::function<void(const std::string &id)>                    double_clicked;
 
 protected:
   // --- Qt methods override
@@ -107,6 +108,7 @@ protected:
   void     mouseMoveEvent(QGraphicsSceneMouseEvent *event);
   void     mousePressEvent(QGraphicsSceneMouseEvent *event) override;
   void     mouseReleaseEvent(QGraphicsSceneMouseEvent *event) override;
+  void     mouseDoubleClickEvent(QGraphicsSceneMouseEvent *event) override;
   bool     sceneEventFilter(QGraphicsItem *watched, QEvent *event) override;
 
   virtual void paint(QPainter                       *painter,

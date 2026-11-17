@@ -190,6 +190,9 @@ std::string GraphViewer::add_node(NodeProxy         *p_node_proxy,
   p_node->right_clicked = [this](const std::string &port_index, QPointF scene_pos)
   { this->on_node_right_clicked(port_index, scene_pos); };
 
+  p_node->double_clicked = [this](const std::string &id)
+  { Q_EMIT this->node_double_clicked(id); };
+
   p_node->connection_started = [this](GraphicsNode *from, int port_index)
   { this->on_connection_started(from, port_index); };
 

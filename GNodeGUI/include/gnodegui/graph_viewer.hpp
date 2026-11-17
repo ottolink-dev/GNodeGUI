@@ -164,6 +164,7 @@ Q_SIGNALS:
   void node_selected(std::string node_id);
   void node_settings_request(std::string node_id);
   void node_right_clicked(std::string node_id, QPointF scene_pos);
+  void node_double_clicked(std::string node_id);
   void node_type_dropped(std::string node_type, QPointF scene_pos);
   void nodes_copy_request(std::vector<std::string> id_list,
                           std::vector<QPointF>     scene_pos_list);
