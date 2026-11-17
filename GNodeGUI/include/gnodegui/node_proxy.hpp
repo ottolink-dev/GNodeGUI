@@ -9,6 +9,8 @@
  */
 #pragma once
 #include <memory>
+#include <string>
+#include <unordered_map>
 
 #include <QObject>
 #include <QWidget>
@@ -54,6 +56,10 @@ public:
   virtual PortType    get_port_type(int port_index) const = 0;
   virtual std::string get_data_type(int port_index) const = 0;
   virtual void       *get_data_ref(int /*port_index*/) const = 0;
+  virtual std::unordered_map<std::string, std::string> consume_port_renames()
+  {
+    return {};
+  }
 
   // --- Debugging
   void log_debug();

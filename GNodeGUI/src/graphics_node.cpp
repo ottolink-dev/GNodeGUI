@@ -575,6 +575,7 @@ void GraphicsNode::on_ports_changed()
   }
 
   // update geometry and clear connected_link_ref to new size
+  const auto renamed_ports = this->p_proxy->consume_port_renames();
   this->update_geometry();
 
   // reconcile each link with the new ports
@@ -582,7 +583,11 @@ void GraphicsNode::on_ports_changed()
 
   for (const auto &info : attached_links)
   {
-    int new_port_index = this->get_port_index(info.port_id);
+    std::string target_port_id = info.port_id;
+    if (auto it = renamed_ports.find(info.port_id); it != renamed_ports.end())
+      target_port_id = it->second;
+
+    int new_port_index = this->get_port_index(target_port_id);
 
     // check if port still exists and has the expected direction
     bool is_valid_port = (new_port_index >= 0);
@@ -615,6 +620,11 @@ void GraphicsNode::on_ports_changed()
   // delete links connected to ports that no longer exist
   for (GraphicsLink *link : links_to_delete)
   {
+    if (GraphicsNode *out_node = link->get_node_out(); out_node && out_node != this)
+      out_node->set_is_port_connected(link->get_port_out_index(), nullptr);
+    if (GraphicsNode *in_node = link->get_node_in(); in_node && in_node != this)
+      in_node->set_is_port_connected(link->get_port_in_index(), nullptr);
+
     clean_delete_graphics_item(link);
   }
 
