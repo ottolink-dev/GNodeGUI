@@ -193,6 +193,12 @@ std::string GraphViewer::add_node(NodeProxy         *p_node_proxy,
   p_node->connection_started = [this](GraphicsNode *from, int port_index)
   { this->on_connection_started(from, port_index); };
 
+  p_node->connection_detached = [this](GraphicsLink *p_link)
+  {
+    if (p_link && p_link->get_node_out() && p_link->get_node_in())
+      this->request_deletion({}, {endpoints(p_link)});
+  };
+
   p_node->connection_finished =
       [this](GraphicsNode *from, int port_from_index, GraphicsNode *to, int port_to_index)
   { this->on_connection_finished(from, port_from_index, to, port_to_index); };
@@ -609,59 +615,59 @@ bool GraphViewer::execute_new_node_context_menu()
   }
 
   // setup filtering
-  bool submenu_active = true;
-  bool filtering_active = false;
+  bool   submenu_active = true;
+  bool   filtering_active = false;
   QMenu *raw_menu = menu.get();
 
-  this->connect(
-      text_box,
-      &QLineEdit::textEdited,
-      [this, raw_menu, category_map, &submenu_active, &filtering_active](const QString &text)
-      {
-        // rebuild the menu from scratch
-        if (submenu_active)
-        {
-          for (auto &[_, submenu] : category_map)
-            raw_menu->removeAction(submenu->menuAction());
+  this->connect(text_box,
+                &QLineEdit::textEdited,
+                [this, raw_menu, category_map, &submenu_active, &filtering_active](
+                    const QString &text)
+                {
+                  // rebuild the menu from scratch
+                  if (submenu_active)
+                  {
+                    for (auto &[_, submenu] : category_map)
+                      raw_menu->removeAction(submenu->menuAction());
 
-          submenu_active = false;
-        }
+                    submenu_active = false;
+                  }
 
-        // add everything
-        if (!filtering_active)
-        {
-          for (const auto &[key, _] : this->node_inventory)
-            raw_menu->addAction(QString::fromStdString(key));
+                  // add everything
+                  if (!filtering_active)
+                  {
+                    for (const auto &[key, _] : this->node_inventory)
+                      raw_menu->addAction(QString::fromStdString(key));
 
-          filtering_active = true;
-        }
+                    filtering_active = true;
+                  }
 
-        // determine who's visible
-        std::map<std::string, bool> is_visible;
+                  // determine who's visible
+                  std::map<std::string, bool> is_visible;
 
-        for (const auto &[key, _] : this->node_inventory)
-        {
-          QString    key_qstr = QString::fromStdString(key);
-          const bool match = key_qstr.contains(text, Qt::CaseInsensitive);
+                  for (const auto &[key, _] : this->node_inventory)
+                  {
+                    QString    key_qstr = QString::fromStdString(key);
+                    const bool match = key_qstr.contains(text, Qt::CaseInsensitive);
 
-          if (text.isEmpty() || text.compare(" ") == 0)
-            is_visible[key] = true;
-          else
-            is_visible[key] = match;
-        }
+                    if (text.isEmpty() || text.compare(" ") == 0)
+                      is_visible[key] = true;
+                    else
+                      is_visible[key] = match;
+                  }
 
-        // apply visibility
-        for (auto action : raw_menu->actions())
-        {
-          std::string key = action->text().toStdString();
-          if (!key.empty()) // skip text box...
-          {
-            auto it = is_visible.find(key);
-            if (it != is_visible.end())
-              action->setVisible(it->second);
-          }
-        }
-      });
+                  // apply visibility
+                  for (auto action : raw_menu->actions())
+                  {
+                    std::string key = action->text().toStdString();
+                    if (!key.empty()) // skip text box...
+                    {
+                      auto it = is_visible.find(key);
+                      if (it != is_visible.end())
+                        action->setVisible(it->second);
+                    }
+                  }
+                });
 
   // make sure the text box gets focus so the user doesn't have to click on it
   text_box->setFocus();

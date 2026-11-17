@@ -59,8 +59,8 @@ public:
   void set_is_port_connected(int port_index, GraphicsLink *p_link);
   void set_p_proxy(QPointer<NodeProxy> new_p_proxy);
 
-  void set_widget(QWidget *new_widget, QSize widget_size = QSize());
-  void set_widget_visibility(bool is_visible);
+  void     set_widget(QWidget *new_widget, QSize widget_size = QSize());
+  void     set_widget_visibility(bool is_visible);
   QWidget *get_widget() const;
 
   // --- UI
@@ -91,6 +91,7 @@ public:
       void(GraphicsNode *from, int port_from_index, GraphicsNode *to, int port_to_index)>
                                                                 connection_finished;
   std::function<void(GraphicsNode *from, int port_index)>       connection_started;
+  std::function<void(GraphicsLink *link)>                       connection_detached;
   std::function<void(const std::string &id)>                    selected;
   std::function<void(const std::string &id)>                    deselected;
   std::function<void(const std::string &id, QPointF scene_pos)> right_clicked;
@@ -144,6 +145,7 @@ private:
   bool                         is_widget_visible = true;
   bool                         has_connection_started = false;
   bool                         is_port_pressed = false;
+  GraphicsNode                *node_from = nullptr;
   int                          port_index_from;
   std::string                  data_type_connecting = "";
   QGraphicsProxyWidget        *proxy_widget = nullptr; // owned by this

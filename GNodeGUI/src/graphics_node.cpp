@@ -304,6 +304,28 @@ nlohmann::json GraphicsNode::json_to() const
 
 void GraphicsNode::mouseMoveEvent(QGraphicsSceneMouseEvent *event)
 {
+  if (this->has_connection_started && this->node_from && this->node_from != this)
+  {
+    QPointF item_pos = event->scenePos() - this->scenePos();
+
+    if (this->update_is_port_hovered(item_pos))
+    {
+      for (int k = 0; k < this->get_nports(); k++)
+      {
+        if (this->is_port_hovered[k])
+        {
+          PortType    from_ptype = this->node_from->get_port_type(this->port_index_from);
+          PortType    to_ptype = this->get_port_type(k);
+          std::string from_pdata = this->node_from->get_data_type(this->port_index_from);
+          std::string to_pdata = this->get_data_type(k);
+
+          if (from_ptype == to_ptype || from_pdata != to_pdata)
+            this->is_port_hovered[k] = false;
+        }
+      }
+    }
+  }
+
   // let the base class handle normal movement
   QGraphicsItem::mouseMoveEvent(event);
 }
@@ -337,6 +359,7 @@ void GraphicsNode::mousePressEvent(QGraphicsSceneMouseEvent *event)
 
       this->has_connection_started = true;
       this->setFlag(QGraphicsItem::ItemIsMovable, false);
+      this->node_from = this;
       this->port_index_from = hovered_port_index;
       this->data_type_connecting = this->get_data_type(hovered_port_index);
       if (this->connection_started)
@@ -346,6 +369,38 @@ void GraphicsNode::mousePressEvent(QGraphicsSceneMouseEvent *event)
       this->is_port_pressed = true;
       event->accept();
       return;
+    }
+    else if (hovered_port_index >= 0 &&
+             this->get_port_type(hovered_port_index) == PortType::IN &&
+             hovered_port_index < static_cast<int>(this->connected_link_ref.size()) &&
+             this->connected_link_ref[hovered_port_index])
+    {
+      GraphicsLink *existing_link = this->connected_link_ref[hovered_port_index];
+      GraphicsNode *out_node = existing_link->get_node_out();
+      int           out_port_index = existing_link->get_port_out_index();
+
+      if (out_node && out_port_index >= 0)
+      {
+        Logger::log()->trace("GraphicsNode::mousePressEvent: connection_detached {}:{}",
+                             this->get_id(),
+                             hovered_port_index);
+
+        if (this->connection_detached)
+          this->connection_detached(existing_link);
+
+        this->has_connection_started = true;
+        this->setFlag(QGraphicsItem::ItemIsMovable, false);
+        this->node_from = out_node;
+        this->port_index_from = out_port_index;
+        this->data_type_connecting = out_node->get_data_type(out_port_index);
+        if (this->connection_started)
+          this->connection_started(out_node, out_port_index);
+
+        // accepted without the base handler, which would also select the node
+        this->is_port_pressed = true;
+        event->accept();
+        return;
+      }
     }
     else
     {
@@ -374,6 +429,7 @@ void GraphicsNode::mouseReleaseEvent(QGraphicsSceneMouseEvent *event)
     }
     else if (this->has_connection_started)
     {
+      GraphicsNode          *source_node = this->node_from ? this->node_from : this;
       bool                   is_dropped = true;
       QList<QGraphicsItem *> items_under_mouse = scene()->items(event->scenePos());
 
@@ -384,7 +440,7 @@ void GraphicsNode::mouseReleaseEvent(QGraphicsSceneMouseEvent *event)
 
           int hovered_port_index = p_target_node ? p_target_node->get_hovered_port_index()
                                                  : -1;
-          if (hovered_port_index >= 0 && p_target_node != this)
+          if (hovered_port_index >= 0 && p_target_node != source_node)
           {
             Logger::log()->trace(
                 "GraphicsNode::mouseReleaseEvent: connection_finished {}:{}",
@@ -392,7 +448,7 @@ void GraphicsNode::mouseReleaseEvent(QGraphicsSceneMouseEvent *event)
                 hovered_port_index);
 
             if (this->connection_finished)
-              this->connection_finished(this,
+              this->connection_finished(source_node,
                                         this->port_index_from,
                                         p_target_node,
                                         hovered_port_index);
@@ -414,13 +470,14 @@ void GraphicsNode::mouseReleaseEvent(QGraphicsSceneMouseEvent *event)
       if (is_dropped)
       {
         Logger::log()->trace("GraphicsNode::mouseReleaseEvent connection_dropped {}",
-                             this->get_id());
+                             source_node->get_id());
 
         if (this->connection_dropped)
-          this->connection_dropped(this, this->port_index_from, event->scenePos());
+          this->connection_dropped(source_node, this->port_index_from, event->scenePos());
       }
 
       this->has_connection_started = false;
+      this->node_from = nullptr;
 
       // clean-up port color state
       for (QGraphicsItem *item : this->scene()->items())
@@ -848,11 +905,12 @@ bool GraphicsNode::sceneEventFilter(QGraphicsItem *watched, QEvent *event)
             if (!p_node)
               break; // avoid deref if deleted mid-loop
 
-            int      from_pidx = p_node->port_index_from;
-            PortType from_ptype = p_node->get_port_type(from_pidx);
-            PortType to_ptype = this->get_port_type(k);
+            GraphicsNode *source_node = p_node->node_from ? p_node->node_from : p_node;
+            int           from_pidx = p_node->port_index_from;
+            PortType      from_ptype = source_node->get_port_type(from_pidx);
+            PortType      to_ptype = this->get_port_type(k);
 
-            std::string from_pdata = p_node->get_data_type(from_pidx);
+            std::string from_pdata = source_node->get_data_type(from_pidx);
             std::string to_pdata = this->get_data_type(k);
 
             // Incompatible or same type → deactivate hover
