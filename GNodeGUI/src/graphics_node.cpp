@@ -601,13 +601,23 @@ void GraphicsNode::on_ports_changed()
 
     int new_port_index = this->get_port_index(target_port_id);
 
-    // check if port still exists and has the expected direction
+    // check if port still exists, has the expected direction, and matches data type
     bool is_valid_port = (new_port_index >= 0);
     if (is_valid_port)
     {
       PortType expected_type = info.is_out ? PortType::OUT : PortType::IN;
       if (this->get_port_type(new_port_index) != expected_type)
         is_valid_port = false;
+      else
+      {
+        GraphicsNode *other_node = info.is_out ? info.link->get_node_in()
+                                               : info.link->get_node_out();
+        int           other_port = info.is_out ? info.link->get_port_in_index()
+                                               : info.link->get_port_out_index();
+        if (other_node &&
+            other_node->get_data_type(other_port) != this->get_data_type(new_port_index))
+          is_valid_port = false;
+      }
     }
 
     if (is_valid_port)
