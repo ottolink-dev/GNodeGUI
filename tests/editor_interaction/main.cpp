@@ -2,6 +2,8 @@
 #include "gnodegui/graphics_group.hpp"
 #include "gnodegui/style.hpp"
 
+#include <QLineEdit>
+#include <QMenu>
 #include <QSignalSpy>
 #include <QtTest>
 
@@ -222,6 +224,114 @@ private Q_SLOTS:
     QVERIFY(viewer.node("a")->isSelected());
     QVERIFY(viewer.node("b")->isSelected());
     QVERIFY(!viewer.node("c")->isSelected());
+  }
+
+  void new_node_menu_filtering_caps_restores_and_reanchors()
+  {
+    TestViewer viewer;
+
+    std::map<std::string, std::string> inventory;
+    for (int k = 0; k < 100; ++k)
+    {
+      inventory["Alpha_" + std::to_string(k)] = "CatA/Sub1";
+      inventory["Beta_" + std::to_string(k)] = "CatB/Sub2";
+      inventory["Flow_" + std::to_string(k)] = "CatC";
+    }
+    viewer.set_node_inventory(inventory);
+
+    GN_STYLE->viewer.max_filtered_nodes = 15;
+    QSignalSpy new_node_spy(&viewer, &gngui::GraphViewer::new_node_request);
+
+    QCursor::setPos(100, 100);
+
+    QTimer::singleShot(
+        50,
+        []()
+        {
+          QMenu *menu = qobject_cast<QMenu *>(QApplication::activePopupWidget());
+          QVERIFY(menu);
+
+          // Ensure the menu Always closes when this lambda returns (even if a QCOMPARE
+          // fails)
+          const auto guard = qScopeGuard([menu]() { menu->close(); });
+
+          QLineEdit *filter_box = menu->findChild<QLineEdit *>();
+          QVERIFY(filter_box);
+
+          const QPoint initial_pos = menu->pos();
+
+          // --- Broad filter ('e' matches Beta_0..99 = 100 nodes)
+
+          filter_box->setText("e");
+          QCoreApplication::processEvents();
+
+          std::vector<QAction *> visible_actions;
+          for (QAction *action : menu->actions())
+            if (action->isVisible())
+              visible_actions.push_back(action);
+
+          // 1 QWidgetAction (filter_box) + 15 capped items + 1 "...and 85 more"
+          QCOMPARE(visible_actions.size(), size_t(17));
+          QVERIFY(!visible_actions.back()->isEnabled());
+          QCOMPARE(visible_actions.back()->text(), QStringLiteral("…and 85 more"));
+          QCOMPARE(menu->pos(), initial_pos);
+
+          // --- Clear filter restores original top-level categories (CatA, CatB, CatC)
+
+          filter_box->clear();
+          QCoreApplication::processEvents();
+
+          visible_actions.clear();
+          for (QAction *action : menu->actions())
+            if (action->isVisible())
+              visible_actions.push_back(action);
+
+          // 1 QWidgetAction + 3 top-level category submenus
+          QCOMPARE(visible_actions.size(), size_t(4));
+          QVERIFY(visible_actions[1]->menu() != nullptr);
+          QCOMPARE(menu->pos(), initial_pos);
+
+          // --- Typing while a category submenu is open forwards to filter_box
+
+          QAction *cat_c_action = visible_actions[3];
+          QMenu   *cat_c_menu = cat_c_action->menu();
+          QVERIFY(cat_c_menu);
+          menu->setActiveAction(cat_c_action);
+          cat_c_menu->popup(menu->pos() + QPoint(100, 50));
+          QCoreApplication::processEvents();
+          QVERIFY(cat_c_menu->isVisible());
+
+          QTest::keyClick(cat_c_menu, Qt::Key_F);
+          QTest::keyClick(cat_c_menu, Qt::Key_L);
+          QCoreApplication::processEvents();
+          QVERIFY(!cat_c_menu->isVisible());
+          QCOMPARE(filter_box->text(), QStringLiteral("fl"));
+
+          filter_box->clear();
+          QCoreApplication::processEvents();
+
+          // --- Narrow filter + Return key selects first matching node
+
+          filter_box->setText("Flow_42");
+          QCoreApplication::processEvents();
+
+          visible_actions.clear();
+          for (QAction *action : menu->actions())
+            if (action->isVisible())
+              visible_actions.push_back(action);
+
+          // 1 QWidgetAction + 1 exact match ("Flow_42")
+          QCOMPARE(visible_actions.size(), size_t(2));
+          QCOMPARE(visible_actions[1]->text(), QStringLiteral("Flow_42"));
+          QCOMPARE(menu->pos(), initial_pos);
+
+          QTest::keyClick(filter_box, Qt::Key_Return);
+        });
+
+    const bool created = viewer.execute_new_node_context_menu();
+    QVERIFY(created);
+    QCOMPARE(new_node_spy.count(), 1);
+    QCOMPARE(new_node_spy.takeFirst().at(0).value<std::string>(), std::string("Flow_42"));
   }
 };
 

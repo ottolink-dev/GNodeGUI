@@ -6,10 +6,12 @@
 #include <iostream>
 
 #include <QCoreApplication>
+#include <QGuiApplication>
 #include <QKeyEvent>
 #include <QLineEdit>
 #include <QMenu>
 #include <QMimeData>
+#include <QScreen>
 #include <QTimer>
 #include <QToolTip>
 #include <QVBoxLayout>
@@ -51,6 +53,70 @@ LinkEndpoints endpoints(GraphicsLink *link)
           link->get_node_in()->get_id(),
           link->get_node_in()->get_port_id(link->get_port_in_index())};
 }
+
+class MenuKeyForwarder : public QObject
+{
+public:
+  MenuKeyForwarder(QMenu                                *root_menu,
+                   QWidgetAction                        *text_box_action,
+                   QLineEdit                            *text_box,
+                   const std::map<std::string, QMenu *> &submenus)
+      : QObject(root_menu), root_menu(root_menu), text_box_action(text_box_action),
+        text_box(text_box), submenus(submenus)
+  {
+  }
+
+protected:
+  bool eventFilter(QObject *obj, QEvent *event) override
+  {
+    if (event->type() != QEvent::KeyPress)
+      return QObject::eventFilter(obj, event);
+
+    auto *key_event = static_cast<QKeyEvent *>(event);
+
+    if (key_event->modifiers() &
+        (Qt::ControlModifier | Qt::AltModifier | Qt::MetaModifier))
+      return QObject::eventFilter(obj, event);
+
+    switch (key_event->key())
+    {
+    case Qt::Key_Up:
+    case Qt::Key_Down:
+    case Qt::Key_Left:
+    case Qt::Key_Right:
+    case Qt::Key_Return:
+    case Qt::Key_Enter:
+    case Qt::Key_Escape:
+    case Qt::Key_Tab:
+    case Qt::Key_Backtab:
+      return QObject::eventFilter(obj, event);
+    default:
+      break;
+    }
+
+    const bool is_backspace = (key_event->key() == Qt::Key_Backspace);
+    const bool is_printable = (!key_event->text().isEmpty() &&
+                               key_event->text().at(0).isPrint());
+
+    if (!is_backspace && !is_printable)
+      return QObject::eventFilter(obj, event);
+
+    for (auto &[_, submenu] : this->submenus)
+      if (submenu->isVisible())
+        submenu->hide();
+
+    this->root_menu->setActiveAction(this->text_box_action);
+    this->text_box->setFocus();
+    QCoreApplication::sendEvent(this->text_box, key_event);
+    return true;
+  }
+
+private:
+  QMenu                                *root_menu;
+  QWidgetAction                        *text_box_action;
+  QLineEdit                            *text_box;
+  const std::map<std::string, QMenu *> &submenus;
+};
 } // namespace
 
 GraphViewer::GraphViewer(std::string id, QWidget *parent) : QGraphicsView(parent), id(id)
@@ -564,7 +630,8 @@ bool GraphViewer::execute_new_node_context_menu()
   std::unique_ptr<QMenu> menu = std::make_unique<QMenu>(this);
 
   // backup mouse position
-  QPointF mouse_scene_pos = this->get_mouse_scene_pos();
+  const QPoint  popup_pos = QCursor::pos();
+  const QPointF mouse_scene_pos = this->get_mouse_scene_pos();
 
   // add filterbox to the context menu
   QLineEdit *text_box = new QLineEdit(menu.get());
@@ -594,6 +661,7 @@ bool GraphViewer::execute_new_node_context_menu()
 
   // to keep track of created submenus
   std::map<std::string, QMenu *> category_map;
+  std::vector<QAction *>         top_level_category_actions;
 
   for (const auto &p : pairs)
   {
@@ -607,7 +675,13 @@ bool GraphViewer::execute_new_node_context_menu()
     {
       // create submenu if it does not exist or add
       if (!category_map.contains(category))
-        category_map[category] = parent_menu->addMenu(category.c_str());
+      {
+        QMenu *submenu = parent_menu->addMenu(category.c_str());
+        category_map[category] = submenu;
+
+        if (parent_menu == menu.get())
+          top_level_category_actions.push_back(submenu->menuAction());
+      }
 
       // and set the submenu as the "current" menu
       parent_menu = category_map.at(category);
@@ -617,67 +691,160 @@ bool GraphViewer::execute_new_node_context_menu()
     parent_menu->addAction(action_name.c_str());
   }
 
-  // setup filtering
-  bool   submenu_active = true;
-  bool   filtering_active = false;
-  QMenu *raw_menu = menu.get();
+  // --- Setup filtering
+
+  QMenu                 *raw_menu = menu.get();
+  std::vector<QAction *> filter_actions;
+  QAction               *first_match_action = nullptr;
+
+  this->connect(
+      text_box,
+      &QLineEdit::textChanged,
+      [this,
+       raw_menu,
+       text_box,
+       popup_pos,
+       top_level_category_actions,
+       &filter_actions,
+       &first_match_action](const QString &text)
+      {
+        // remove previous filter results
+        for (QAction *action : filter_actions)
+        {
+          raw_menu->removeAction(action);
+          delete action;
+        }
+        filter_actions.clear();
+        first_match_action = nullptr;
+
+        if (text.isEmpty())
+        {
+          // restore original category submenus
+          for (QAction *action : top_level_category_actions)
+            action->setVisible(true);
+        }
+        else
+        {
+          // hide category submenus while filtering
+          for (QAction *action : top_level_category_actions)
+            action->setVisible(false);
+
+          const QString query = text.trimmed();
+          const bool    match_all = (text == QStringLiteral(" "));
+
+          std::vector<std::string> prefix_matches;
+          std::vector<std::string> substring_matches;
+
+          for (const auto &[key, _] : this->node_inventory)
+          {
+            const QString key_qstr = QString::fromStdString(key);
+
+            if (match_all)
+            {
+              prefix_matches.push_back(key);
+            }
+            else if (!query.isEmpty() && key_qstr.startsWith(query, Qt::CaseInsensitive))
+            {
+              prefix_matches.push_back(key);
+            }
+            else if (!query.isEmpty() && key_qstr.contains(query, Qt::CaseInsensitive))
+            {
+              substring_matches.push_back(key);
+            }
+          }
+
+          std::vector<std::string> matches;
+          matches.reserve(prefix_matches.size() + substring_matches.size());
+          matches.insert(matches.end(), prefix_matches.begin(), prefix_matches.end());
+          matches.insert(matches.end(),
+                         substring_matches.begin(),
+                         substring_matches.end());
+
+          const size_t max_entries = GN_STYLE->viewer.max_filtered_nodes;
+          const size_t shown_count = std::min(matches.size(), max_entries);
+
+          for (size_t k = 0; k < shown_count; ++k)
+          {
+            QAction *action = raw_menu->addAction(QString::fromStdString(matches[k]));
+            filter_actions.push_back(action);
+
+            if (k == 0)
+              first_match_action = action;
+          }
+
+          if (matches.size() > max_entries)
+          {
+            const size_t remaining = matches.size() - max_entries;
+            QAction     *more_action = raw_menu->addAction(
+                QStringLiteral("…and %1 more").arg(remaining));
+            more_action->setEnabled(false);
+            filter_actions.push_back(more_action);
+          }
+          else if (matches.empty())
+          {
+            QAction *empty_action = raw_menu->addAction(
+                QStringLiteral("No matching nodes"));
+            empty_action->setEnabled(false);
+            filter_actions.push_back(empty_action);
+          }
+        }
+
+        // resize and re-anchor popup to original invocation position
+        raw_menu->adjustSize();
+
+        QPoint target_pos = popup_pos;
+        if (QScreen *screen = QGuiApplication::screenAt(popup_pos))
+        {
+          const QRect avail = screen->availableGeometry();
+          const QSize sz = raw_menu->sizeHint();
+
+          if (target_pos.x() + sz.width() > avail.right())
+            target_pos.setX(std::max(avail.left(), avail.right() - sz.width()));
+
+          if (target_pos.y() + sz.height() > avail.bottom())
+            target_pos.setY(std::max(avail.top(), avail.bottom() - sz.height()));
+        }
+
+        raw_menu->move(target_pos);
+        text_box->setFocus();
+      });
+
+  // --- Forward printable keys from menus/submenus back to the filter box
+
+  auto *key_forwarder = new MenuKeyForwarder(raw_menu,
+                                             text_box_action,
+                                             text_box,
+                                             category_map);
+  raw_menu->installEventFilter(key_forwarder);
+  for (auto &[_, submenu] : category_map)
+    submenu->installEventFilter(key_forwarder);
+
+  // --- Return key creates the first matching node
+
+  QAction *return_selected_action = nullptr;
 
   this->connect(text_box,
-                &QLineEdit::textEdited,
-                [this, raw_menu, category_map, &submenu_active, &filtering_active](
-                    const QString &text)
+                &QLineEdit::returnPressed,
+                [raw_menu, &first_match_action, &return_selected_action]()
                 {
-                  // rebuild the menu from scratch
-                  if (submenu_active)
+                  if (first_match_action && first_match_action->isEnabled())
                   {
-                    for (auto &[_, submenu] : category_map)
-                      raw_menu->removeAction(submenu->menuAction());
-
-                    submenu_active = false;
-                  }
-
-                  // add everything
-                  if (!filtering_active)
-                  {
-                    for (const auto &[key, _] : this->node_inventory)
-                      raw_menu->addAction(QString::fromStdString(key));
-
-                    filtering_active = true;
-                  }
-
-                  // determine who's visible
-                  std::map<std::string, bool> is_visible;
-
-                  for (const auto &[key, _] : this->node_inventory)
-                  {
-                    QString    key_qstr = QString::fromStdString(key);
-                    const bool match = key_qstr.contains(text, Qt::CaseInsensitive);
-
-                    if (text.isEmpty() || text.compare(" ") == 0)
-                      is_visible[key] = true;
-                    else
-                      is_visible[key] = match;
-                  }
-
-                  // apply visibility
-                  for (auto action : raw_menu->actions())
-                  {
-                    std::string key = action->text().toStdString();
-                    if (!key.empty()) // skip text box...
-                    {
-                      auto it = is_visible.find(key);
-                      if (it != is_visible.end())
-                        action->setVisible(it->second);
-                    }
+                    return_selected_action = first_match_action;
+                    raw_menu->setActiveAction(first_match_action);
+                    raw_menu->close();
                   }
                 });
 
   // make sure the text box gets focus so the user doesn't have to click on it
   text_box->setFocus();
 
-  QAction *selected_action = menu->exec(QCursor::pos());
+  QAction *selected_action = menu->exec(popup_pos);
 
-  if (selected_action)
+  if (!selected_action && return_selected_action)
+    selected_action = return_selected_action;
+
+  if (selected_action && selected_action != text_box_action &&
+      selected_action->isEnabled())
   {
     Q_EMIT this->new_node_request(selected_action->text().toStdString(), mouse_scene_pos);
     return true;

@@ -47,6 +47,10 @@ public:
     // needed to fit the whole graph in the view
     float zoom_min = 0.15f;
     float zoom_max = 3.f;
+
+    // maximum number of matching entries displayed when filtering the new-node
+    // context menu
+    size_t max_filtered_nodes = 15;
   } viewer;
 
   struct Node
