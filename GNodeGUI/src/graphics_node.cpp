@@ -207,6 +207,8 @@ void GraphicsNode::hoverEnterEvent(QGraphicsSceneHoverEvent *event)
 {
   this->is_node_hovered = true;
   this->update();
+  if (this->on_hover_enter)
+    this->on_hover_enter();
 
   QGraphicsRectItem::hoverEnterEvent(event);
 }
@@ -216,6 +218,8 @@ void GraphicsNode::hoverLeaveEvent(QGraphicsSceneHoverEvent *event)
   this->is_node_hovered = false;
   this->setCursor(Qt::ArrowCursor);
   this->update();
+  if (this->on_hover_leave)
+    this->on_hover_leave();
 
   QGraphicsRectItem::hoverLeaveEvent(event);
 }

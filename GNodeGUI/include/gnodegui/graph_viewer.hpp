@@ -160,8 +160,10 @@ Q_SIGNALS:
   void new_node_request(std::string type, QPointF scene_pos);
   void node_deleted(std::string node_id);
   void node_deselected(std::string node_id);
+  void node_hovered(std::string node_id);
   void node_reload_request(std::string node_id);
   void node_selected(std::string node_id);
+  void node_unhovered(std::string node_id);
   void node_settings_request(std::string node_id);
   void node_right_clicked(std::string node_id, QPointF scene_pos);
   void node_double_clicked(std::string node_id);

@@ -290,6 +290,12 @@ std::string GraphViewer::add_node(NodeProxy         *p_node_proxy,
     Q_EMIT this->selection_has_changed();
   };
 
+  p_node->on_hover_enter = [this, p_node]()
+  { Q_EMIT this->node_hovered(p_node->get_id()); };
+
+  p_node->on_hover_leave = [this, p_node]()
+  { Q_EMIT this->node_unhovered(p_node->get_id()); };
+
   // if nothing provided, generate a unique id based on the object address
   std::string nid = node_id.empty() ? std::to_string(reinterpret_cast<uintptr_t>(p_node))
                                     : node_id;

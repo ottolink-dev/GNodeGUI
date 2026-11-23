@@ -100,8 +100,14 @@ public:
 protected:
   // --- Qt methods override
 
-  void     hoverEnterEvent(QGraphicsSceneHoverEvent *event) override;
-  void     hoverLeaveEvent(QGraphicsSceneHoverEvent *event) override;
+  void hoverEnterEvent(QGraphicsSceneHoverEvent *event) override;
+  void hoverLeaveEvent(QGraphicsSceneHoverEvent *event) override;
+
+public:
+  std::function<void()> on_hover_enter;
+  std::function<void()> on_hover_leave;
+
+protected:
   void     hoverMoveEvent(QGraphicsSceneHoverEvent *event) override;
   QRectF   boundingRect() const override;
   QVariant itemChange(GraphicsItemChange change, const QVariant &value) override;
