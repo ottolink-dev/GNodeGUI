@@ -1448,6 +1448,8 @@ void GraphViewer::on_persistent_connection_started(GraphicsNode *from_node,
   QColor color = get_color_from_data_type(from_node->get_data_type(port_index));
   this->temp_link = new GraphicsLink(color, this->current_link_type);
   this->temp_link->set_pen_style(Qt::DashLine);
+  this->temp_link->setAcceptedMouseButtons(Qt::NoButton);
+  this->temp_link->setAcceptHoverEvents(false);
 
   QPointF port_pos = from_node->scenePos() +
                      from_node->get_geometry().port_rects[port_index].center();
