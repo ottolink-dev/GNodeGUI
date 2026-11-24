@@ -218,8 +218,10 @@ private Q_SLOTS:
                               int           port_to_index);
 
   void on_connection_started(GraphicsNode *from_node, int port_index);
+  void on_persistent_connection_started(GraphicsNode *from_node, int port_index);
 
 private:
+  void cancel_persistent_connection();
   void delete_graphics_link(GraphicsLink *,
                             bool link_will_be_replaced = false,
                             bool notify = true);
@@ -240,6 +242,8 @@ private:
 
   GraphicsLink *temp_link = nullptr;   // Temporary link
   GraphicsNode *source_node = nullptr; // Source node for the connection
+  int           source_port_index = -1;
+  bool          is_persistent_connection_active = false;
   LinkType      current_link_type = LinkType::CUBIC;
   bool          is_selecting_all = false;
 

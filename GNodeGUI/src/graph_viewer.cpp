@@ -262,6 +262,9 @@ std::string GraphViewer::add_node(NodeProxy         *p_node_proxy,
   p_node->connection_started = [this](GraphicsNode *from, int port_index)
   { this->on_connection_started(from, port_index); };
 
+  p_node->persistent_connection_started = [this](GraphicsNode *from, int port_index)
+  { this->on_persistent_connection_started(from, port_index); };
+
   p_node->connection_detached = [this](GraphicsLink *p_link)
   {
     if (p_link && p_link->get_node_out() && p_link->get_node_in())
@@ -1102,6 +1105,13 @@ nlohmann::json GraphViewer::json_to() const
 
 void GraphViewer::keyPressEvent(QKeyEvent *event)
 {
+  if (event->key() == Qt::Key_Escape && this->is_persistent_connection_active)
+  {
+    this->cancel_persistent_connection();
+    event->accept();
+    return;
+  }
+
   if (event->key() == Qt::Key_Shift)
     this->setDragMode(QGraphicsView::RubberBandDrag);
 
@@ -1203,6 +1213,35 @@ void GraphViewer::mouseMoveEvent(QMouseEvent *event)
 
 void GraphViewer::mousePressEvent(QMouseEvent *event)
 {
+  if (this->is_persistent_connection_active)
+  {
+    if (event->button() == Qt::RightButton)
+    {
+      this->cancel_persistent_connection();
+      event->accept();
+      return;
+    }
+
+    if (event->button() == Qt::LeftButton)
+    {
+      QGraphicsItem *item = this->itemAt(event->pos());
+
+      if (auto *p_node = dynamic_cast<GraphicsNode *>(item))
+      {
+        int port_index = p_node->get_hovered_port_index();
+        if (port_index >= 0)
+        {
+          this->on_connection_finished(this->source_node,
+                                       this->source_port_index,
+                                       p_node,
+                                       port_index);
+          event->accept();
+          return;
+        }
+      }
+    }
+  }
+
   if (event->button() == Qt::RightButton)
   {
     QGraphicsItem *item = this->itemAt(event->pos());
@@ -1312,6 +1351,8 @@ void GraphViewer::on_connection_finished(GraphicsNode *from_node,
   clean_delete_graphics_item(this->temp_link);
   this->temp_link = nullptr;
   this->source_node = nullptr;
+  this->source_port_index = -1;
+  this->is_persistent_connection_active = false;
 
   const PortType from_type = from_node->get_port_type(port_from_index);
   const PortType to_type = to_node->get_port_type(port_to_index);
@@ -1393,6 +1434,42 @@ void GraphViewer::on_connection_started(GraphicsNode *from_node, int port_index)
 
   Q_EMIT this->connection_started(from_node->get_id(),
                                   from_node->get_port_id(port_index));
+}
+
+void GraphViewer::on_persistent_connection_started(GraphicsNode *from_node,
+                                                   int           port_index)
+{
+  this->cancel_persistent_connection();
+
+  this->source_node = from_node;
+  this->source_port_index = port_index;
+  this->is_persistent_connection_active = true;
+
+  QColor color = get_color_from_data_type(from_node->get_data_type(port_index));
+  this->temp_link = new GraphicsLink(color, this->current_link_type);
+  this->temp_link->set_pen_style(Qt::DashLine);
+
+  QPointF port_pos = from_node->scenePos() +
+                     from_node->get_geometry().port_rects[port_index].center();
+
+  this->temp_link->set_endpoints(port_pos, port_pos);
+  this->scene()->addItem(this->temp_link);
+
+  Q_EMIT this->connection_started(from_node->get_id(),
+                                  from_node->get_port_id(port_index));
+}
+
+void GraphViewer::cancel_persistent_connection()
+{
+  if (this->temp_link)
+  {
+    clean_delete_graphics_item(this->temp_link);
+    this->temp_link = nullptr;
+  }
+
+  this->source_node = nullptr;
+  this->source_port_index = -1;
+  this->is_persistent_connection_active = false;
 }
 
 void GraphViewer::on_node_reload_request(const std::string &node_id)

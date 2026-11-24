@@ -357,6 +357,13 @@ void GraphicsNode::mousePressEvent(QGraphicsSceneMouseEvent *event)
 
     if (hovered_port_index >= 0 && this->is_port_available(hovered_port_index))
     {
+      if ((event->modifiers() & Qt::ShiftModifier) && this->persistent_connection_started)
+      {
+        this->persistent_connection_started(this, hovered_port_index);
+        event->accept();
+        return;
+      }
+
       Logger::log()->trace("GraphicsNode::mousePressEvent: connection_started {}:{}",
                            this->get_id(),
                            hovered_port_index);
@@ -506,11 +513,29 @@ void GraphicsNode::mouseReleaseEvent(QGraphicsSceneMouseEvent *event)
 
 void GraphicsNode::mouseDoubleClickEvent(QGraphicsSceneMouseEvent *event)
 {
-  if (event->button() == Qt::LeftButton && this->double_clicked)
+  if (event->button() == Qt::LeftButton)
   {
-    this->double_clicked(this->get_id());
-    event->accept();
-    return;
+    int hovered_port_index = this->get_hovered_port_index();
+
+    if (hovered_port_index >= 0 && this->is_port_available(hovered_port_index) &&
+        this->persistent_connection_started)
+    {
+      // cancel any drag state started by the second click's mousePressEvent
+      this->has_connection_started = false;
+      this->is_port_pressed = false;
+      this->setFlag(QGraphicsItem::ItemIsMovable, true);
+
+      this->persistent_connection_started(this, hovered_port_index);
+      event->accept();
+      return;
+    }
+
+    if (this->double_clicked)
+    {
+      this->double_clicked(this->get_id());
+      event->accept();
+      return;
+    }
   }
 
   QGraphicsRectItem::mouseDoubleClickEvent(event);

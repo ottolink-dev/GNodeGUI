@@ -57,6 +57,7 @@ public:
 
   void set_is_node_pinned(bool new_state);
   void set_is_port_connected(int port_index, GraphicsLink *p_link);
+  int  get_hovered_port_index() const;
   void set_p_proxy(QPointer<NodeProxy> new_p_proxy);
 
   void     set_widget(QWidget *new_widget, QSize widget_size = QSize());
@@ -91,6 +92,7 @@ public:
       void(GraphicsNode *from, int port_from_index, GraphicsNode *to, int port_to_index)>
                                                                 connection_finished;
   std::function<void(GraphicsNode *from, int port_index)>       connection_started;
+  std::function<void(GraphicsNode *from, int port_index)>       persistent_connection_started;
   std::function<void(GraphicsLink *link)>                       connection_detached;
   std::function<void(const std::string &id)>                    selected;
   std::function<void(const std::string &id)>                    deselected;
@@ -126,7 +128,6 @@ private:
 
   // --- Hover state
 
-  int  get_hovered_port_index() const;
   bool update_is_port_hovered(QPointF scene_pos);
   void update_links();
   void reset_is_port_hovered();
